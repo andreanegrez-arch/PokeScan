@@ -97,9 +97,17 @@ the backend. After changing `backend/app/schemas.py`, start the backend and run
 
 ### Daily price job
 
-Saves Cardmarket's price guide (about 80,000 Pokémon products) into
-`cardmarket_prices`. Every day not saved is lost, so schedule it daily.
-It is safe to run more than once: a day already saved is skipped.
+Reads Cardmarket's price guide (about 80,000 Pokémon products) and stores
+**only what changed** since the previous day:
+
+| Table / view | Content |
+|---|---|
+| `cardmarket_prices` | A row when a product first appears, when any of its prices changes, or when it is no longer listed (`listed = false`). |
+| `price_guide_runs` | One row per saved day, even without changes, with how many rows it added. |
+| `cardmarket_prices_daily` | View that rebuilds the full price list of every saved day. Use it for analysis. |
+
+Every day not saved is lost, so schedule it daily. It is safe to run more
+than once: a day already saved, or older than the latest saved, is skipped.
 
 ```bash
 cd backend

@@ -1,7 +1,9 @@
 # Analysis
 
-Exploratory analysis of the price history collected by the backend
-(`cardmarket_prices` table, joined to the catalog through `cards.cardmarket_id`).
+Exploratory analysis of the price history collected by the backend.
+Query the `cardmarket_prices_daily` view (one full price list per day) and
+join it to the catalog through `cards.cardmarket_id`. The underlying
+`cardmarket_prices` table stores only the changes.
 
 - `sql/` – hand-written SQL queries, one file per question.
 - `notebooks/` – Jupyter notebooks that load query results with pandas and

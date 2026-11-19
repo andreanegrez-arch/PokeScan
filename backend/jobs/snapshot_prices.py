@@ -1,12 +1,18 @@
-"""Daily job: save Cardmarket's Pokémon price guide into cardmarket_prices.
+"""Daily job: save what changed in Cardmarket's Pokémon price guide.
 
 Source: Cardmarket's public price guide for Pokémon (game id 6), a JSON file
 with the prices of every product, regenerated once a night around 02:50
 Italian time. The file stays the same until the next night, so a run at any
 time of the day saves that day's prices.
 
-This table is the price history: a day that is not saved is lost for good.
-The job is safe to run more than once: a day already saved is skipped.
+Only changes are stored. A product gets a new row in cardmarket_prices when
+it first appears, when any of its prices changes, or when it is no longer
+listed. Every saved day is recorded in price_guide_runs, so a day without
+changes is still known to be saved. The view cardmarket_prices_daily
+rebuilds the full price list of any saved day.
+
+A day that is not saved is lost for good. The job is safe to run more than
+once: a day already saved (or older than the latest saved) is skipped.
 
 Run from the backend folder:
     python -m jobs.snapshot_prices            # download and save
@@ -18,6 +24,8 @@ import argparse
 import datetime as dt
 import logging
 import sys
+from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -51,9 +59,23 @@ PRICE_FIELDS = {
     "avg7_holo": "avg7-holo",
     "avg30_holo": "avg30-holo",
 }
-COLUMNS = ["id_product", "id_category", "snapshot_date", *PRICE_FIELDS]
+PRICE_COLUMNS = list(PRICE_FIELDS)
+
+# Columns filled from the file, in the order of to_rows().
+COLUMNS = ["id_product", "id_category", "snapshot_date", *PRICE_COLUMNS]
+STORED_COLUMNS = [*COLUMNS, "listed"]
+# A product gets a new row when any of these differs from its latest row.
+COMPARED_COLUMNS = ["listed", "id_category", *PRICE_COLUMNS]
 
 Row = tuple[Any, ...]
+
+
+@dataclass
+class SnapshotResult:
+    day: dt.date
+    products: int
+    changed: int  # rows added for new products or changed prices
+    removed: int  # rows added for products no longer listed
 
 
 def download_price_guide(url: str = PRICE_GUIDE_URL) -> dict[str, Any]:
@@ -63,14 +85,17 @@ def download_price_guide(url: str = PRICE_GUIDE_URL) -> dict[str, Any]:
     return response.json()
 
 
+def created_at(guide: dict[str, Any]) -> dt.datetime:
+    return dt.datetime.strptime(guide["createdAt"], "%Y-%m-%dT%H:%M:%S%z")
+
+
 def snapshot_date(guide: dict[str, Any]) -> dt.date:
     """Day the file was generated, in its own time zone (Italian time).
 
     Converting to UTC first would move files created just after midnight
     to the previous day.
     """
-    created_at = dt.datetime.strptime(guide["createdAt"], "%Y-%m-%dT%H:%M:%S%z")
-    return created_at.date()
+    return created_at(guide).date()
 
 
 def to_rows(guide: dict[str, Any]) -> list[Row]:
@@ -99,19 +124,75 @@ def check_plausible(rows: list[Row]) -> None:
         raise ValueError("The price guide lists the same product more than once")
 
 
-def is_saved(conn: psycopg.Connection, day: dt.date) -> bool:
-    query = "SELECT 1 FROM cardmarket_prices WHERE snapshot_date = %s LIMIT 1"
-    return conn.execute(query, (day,)).fetchone() is not None
+def latest_saved_day(conn: psycopg.Connection) -> dt.date | None:
+    return conn.execute("SELECT max(snapshot_date) FROM price_guide_runs").fetchone()[0]
 
 
-def save_rows(conn: psycopg.Connection, rows: list[Row]) -> None:
-    """Bulk insert with COPY: much faster than one INSERT per row."""
-    copy_sql = sql.SQL("COPY cardmarket_prices ({}) FROM STDIN").format(
-        sql.SQL(", ").join(map(sql.Identifier, COLUMNS))
+def _columns(names: Iterable[str], table: str | None = None) -> sql.Composable:
+    """Comma-separated column list, optionally qualified: "s"."avg", ..."""
+    ids = (sql.Identifier(table, n) if table else sql.Identifier(n) for n in names)
+    return sql.SQL(", ").join(ids)
+
+
+def save_snapshot(
+    conn: psycopg.Connection, created: dt.datetime, rows: list[Row]
+) -> SnapshotResult:
+    """Store what changed since the latest saved day.
+
+    Runs in the caller's transaction, which must be committed afterwards.
+    """
+    day = created.date()
+
+    # Today's file, in a temporary table.
+    conn.execute(
+        "CREATE TEMP TABLE staging (LIKE cardmarket_prices INCLUDING DEFAULTS)"
+        " ON COMMIT DROP"
     )
+    copy_sql = sql.SQL("COPY staging ({}) FROM STDIN").format(_columns(COLUMNS))
     with conn.cursor() as cur, cur.copy(copy_sql) as copy:
         for row in rows:
             copy.write_row(row)
+
+    # Latest known state of every product, before today's changes.
+    conn.execute(
+        "CREATE TEMP TABLE latest ON COMMIT DROP AS"
+        " SELECT DISTINCT ON (id_product) * FROM cardmarket_prices"
+        " ORDER BY id_product, snapshot_date DESC"
+    )
+
+    # New products, and products whose values differ from their latest row.
+    # IS DISTINCT FROM treats two NULLs as equal, unlike <>.
+    changed = conn.execute(
+        sql.SQL(
+            "INSERT INTO cardmarket_prices ({stored})"
+            " SELECT {staged} FROM staging s"
+            " LEFT JOIN latest l ON l.id_product = s.id_product"
+            " WHERE l.id_product IS NULL"
+            " OR ROW({latest_values}) IS DISTINCT FROM ROW({staged_values})"
+        ).format(
+            stored=_columns(STORED_COLUMNS),
+            staged=_columns(STORED_COLUMNS, "s"),
+            latest_values=_columns(COMPARED_COLUMNS, "l"),
+            staged_values=_columns(COMPARED_COLUMNS, "s"),
+        )
+    ).rowcount
+
+    # Products listed until now but missing from today's file.
+    removed = conn.execute(
+        "INSERT INTO cardmarket_prices (id_product, id_category, snapshot_date, listed)"
+        " SELECT l.id_product, l.id_category, %s, false FROM latest l"
+        " WHERE l.listed"
+        " AND NOT EXISTS (SELECT 1 FROM staging s WHERE s.id_product = l.id_product)",
+        (day,),
+    ).rowcount
+
+    conn.execute(
+        "INSERT INTO price_guide_runs"
+        " (snapshot_date, created_at, products, changed, removed)"
+        " VALUES (%s, %s, %s, %s, %s)",
+        (day, created, len(rows), changed, removed),
+    )
+    return SnapshotResult(day, len(rows), changed, removed)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -143,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def run(dry_run: bool) -> int:
     guide = download_price_guide()
-    day = snapshot_date(guide)
+    created = created_at(guide)
     rows = to_rows(guide)
     log.info("Price guide created at %s: %d products", guide["createdAt"], len(rows))
     check_plausible(rows)
@@ -160,12 +241,23 @@ def run(dry_run: bool) -> int:
 
     # One transaction: the day is saved completely or not at all.
     with conn:
-        if is_saved(conn, day):
-            log.info("Prices of %s already saved, nothing to do", day)
+        last = latest_saved_day(conn)
+        if last is not None and created.date() <= last:
+            log.info(
+                "Prices of %s already saved (latest saved day: %s), nothing to do",
+                created.date(),
+                last,
+            )
             return 0
-        save_rows(conn, rows)
+        result = save_snapshot(conn, created, rows)
 
-    log.info("Saved %d prices for %s", len(rows), day)
+    log.info(
+        "Saved %s: %d products, %d new or changed, %d no longer listed",
+        result.day,
+        result.products,
+        result.changed,
+        result.removed,
+    )
     return 0
 
 
