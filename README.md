@@ -120,6 +120,19 @@ cd backend
 python -m jobs.import_catalog
 ```
 
+To schedule it weekly on Windows (Monday 07:00, log in `backend/import_catalog.log`):
+
+```powershell
+$backend = "C:\path\to\PokeScan\backend"
+$action = New-ScheduledTaskAction -Execute "$backend\.venv\Scripts\pythonw.exe" `
+  -Argument "-m jobs.import_catalog --log-file import_catalog.log" -WorkingDirectory $backend
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "07:00"
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
+  -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+Register-ScheduledTask -TaskName "PokeScan - catalogo TCGdex" -Action $action `
+  -Trigger $trigger -Settings $settings
+```
+
 First import: 206 sets and 21,432 cards (14,640 with Italian names); 96% of
 the cards have a Cardmarket id. **Known limitation:** about 1,800 cards share
 their Cardmarket id with another card, mostly TCGdex mapping errors in older
