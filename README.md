@@ -7,10 +7,10 @@ A portfolio project that covers both **software development** (React + FastAPI
 web app, computer vision) and **data analysis** (daily price pipeline, SQL,
 analysis notebooks).
 
-> **Status:** the backend works end to end: the card catalog and the daily
-> price history are collected, and the scan (with the condition estimate),
-> search, card detail and price history endpoints work. Still to build: the
-> frontend screens.
+> **Status:** the app works end to end: the card catalog and the daily price
+> history are collected, and the web app scans, searches and shows each card
+> with its prices, price history and condition. Still to come: the analysis
+> notebooks and the deploy.
 
 ## How a scan works
 
@@ -110,6 +110,34 @@ border (full art) are not measured. Whitening has only been tested on drawn
 card backs (`backend/tests/test_condition.py`): TCGdex has no photos of
 card backs, so it still has to be measured on real ones.
 
+## The app
+
+Three screens, in Italian or English. The language also picks the card names
+and the condition notes.
+
+- **Scan**: a photo of the front, and optionally of the back. A recognized card
+  opens straight away. When the code fits several cards, the app lists them to
+  pick from. When the code can't be read, it offers the search.
+- **Search**: by name, or by the printed code (`SVI 025/198`). The query is in
+  the URL, so a search can be bookmarked or shared.
+- **Card**: details and Cardmarket prices: trend, low, and 7- and 30-day
+  averages, for the normal and reverse holo versions. Below them, the trend
+  price over 30 days, 3 months or 1 year, and, after a scan, the condition from
+  the photos.
+
+The price chart is plain SVG, with no chart library:
+
+- one series, with the y axis starting at zero;
+- the last price labelled at the end of the line;
+- a crosshair that follows the pointer or the arrow keys;
+- every value also available in a table.
+
+The history grows by one day each time the price job runs. With fewer than two
+days saved, the card page shows the single price instead of a chart.
+
+There is no router library either. Routes live after the `#` (`#/search?q=…`,
+`#/card/sv01-025`), so the build is plain static files.
+
 ## Architecture
 
 ```
@@ -136,7 +164,7 @@ analysis/ (SQL + Jupyter) ──► PostgreSQL
 ```
 backend/    FastAPI app, recognition, catalog import, daily price job, tests
 db/         PostgreSQL schema
-frontend/   React + TypeScript app
+frontend/   React + TypeScript app: scan, search, card page with price chart
 analysis/   SQL queries and Jupyter notebooks
 ```
 
@@ -174,7 +202,10 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>.
+Open <http://localhost:5173>, with the backend running. The app calls the API
+at `http://localhost:8000`; to use another address, copy `.env.example` to
+`.env.local` and change `VITE_API_URL`. Checks: `npm run build` (types and
+build) and `npm run lint`.
 
 The TypeScript API types in `frontend/src/api/schema.d.ts` are generated from
 the backend. After changing `backend/app/schemas.py`, start the backend and run
@@ -321,9 +352,9 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 - [x] Search and card detail endpoints
 - [x] Card identification from the printed code (OCR, set code, card name)
 - [x] Condition estimate: centering, edge whitening
+- [x] Web app: scan, search, card page with prices, price history chart and condition
 - [ ] Settle the remaining ties by comparing the set symbol or the artwork
 - [ ] Measure recognition and condition on real phone photos (whitening has
       only been tested on drawn card backs)
-- [ ] Price history chart in the frontend
 - [ ] Analysis notebooks
 - [ ] Deploy

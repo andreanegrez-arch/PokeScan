@@ -1,153 +1,123 @@
-import { useState } from 'react'
-import {
-  scanCard,
-  type CardSummary,
-  type Centering,
-  type ConditionEstimate,
-  type ScanResult,
-} from './api/client'
+import { useEffect, useState } from 'react'
+import type { ConditionEstimate, Lang } from './api/client'
+import { Segmented } from './components/Segmented'
+import { LangContext, STRINGS, useLang } from './i18n'
+import { CardPage } from './pages/CardPage'
+import { ScanPage, type ScanState } from './pages/ScanPage'
+import { SearchPage } from './pages/SearchPage'
+import { paths, useRoute } from './router'
 
-const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
+const LANG_KEY = 'pokescan.lang'
 
-const CONDITION_LABELS: Record<NonNullable<ConditionEstimate['estimate']>, string> = {
-  mint: 'Mint',
-  near_mint: 'Near Mint',
-  excellent: 'Excellent',
-  good: 'Good',
-  light_played: 'Light Played',
-  played: 'Played',
-  poor: 'Poor',
+function savedLang(): Lang {
+  try {
+    const saved = localStorage.getItem(LANG_KEY)
+    if (saved === 'it' || saved === 'en') return saved
+  } catch {
+    // Storage blocked: fall back to the browser's language.
+  }
+  return navigator.language.startsWith('it') ? 'it' : 'en'
 }
 
 export default function App() {
-  const [front, setFront] = useState<File | null>(null)
-  const [back, setBack] = useState<File | null>(null)
-  const [result, setResult] = useState<ScanResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const route = useRoute()
+  const [lang, setLang] = useState<Lang>(savedLang)
+  const [scan, setScan] = useState<ScanState>({ front: null, back: null, result: null })
+  // The nav link brings back the last search.
+  const [lastQuery, setLastQuery] = useState('')
+  const t = STRINGS[lang]
 
-  async function handleScan() {
-    if (!front) return
-    setLoading(true)
-    setError(null)
-    setResult(null)
+  useEffect(() => {
+    document.documentElement.lang = lang
     try {
-      setResult(await scanCard(front, back))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
+      localStorage.setItem(LANG_KEY, lang)
+    } catch {
+      // Not remembered: no harm.
     }
+  }, [lang])
+
+  const pageKey = route.page === 'card' ? `card:${route.id}` : route.page
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pageKey])
+
+  if (route.page === 'search' && route.q !== lastQuery) setLastQuery(route.q)
+
+  let page
+  switch (route.page) {
+    case 'scan':
+      page = <ScanPage scan={scan} setScan={setScan} />
+      break
+    case 'search':
+      page = <SearchPage query={route.q} />
+      break
+    case 'card':
+      page = <CardPage cardId={route.id} condition={scannedCondition(scan, route.id)} />
+      break
+    case 'missing':
+      page = <Missing />
   }
 
   return (
-    <main>
-      <h1>PokeScan</h1>
-      <p>Fotografa una carta per scoprire il suo valore su Cardmarket.</p>
-
-      <PhotoPicker label="Fronte (obbligatorio)" photo={front} onChange={setFront} />
-      <PhotoPicker label="Retro (facoltativo, per le condizioni)" photo={back} onChange={setBack} />
-
-      <button type="button" onClick={handleScan} disabled={!front || loading}>
-        {loading ? 'Scansione in corso…' : 'Scansiona'}
-      </button>
-
-      {error && (
-        <p className="error" role="alert">
-          Errore: {error}
-        </p>
-      )}
-
-      {result && <ScanOutcome result={result} />}
-      {result?.condition && <ConditionPanel condition={result.condition} />}
-    </main>
+    <LangContext value={{ lang, t }}>
+      <header className="topbar">
+        <div className="topbar-inner">
+          <a className="brand" href={paths.scan}>
+            <Logo />
+            PokeScan
+          </a>
+          <nav aria-label="PokeScan">
+            <a href={paths.scan} aria-current={route.page === 'scan' ? 'page' : undefined}>
+              {t.navScan}
+            </a>
+            <a
+              href={paths.search(lastQuery)}
+              aria-current={route.page === 'search' ? 'page' : undefined}
+            >
+              {t.navSearch}
+            </a>
+          </nav>
+          <Segmented
+            label={t.language}
+            options={[
+              { value: 'it', label: 'IT', title: 'Italiano' },
+              { value: 'en', label: 'EN', title: 'English' },
+            ]}
+            value={lang}
+            onChange={setLang}
+          />
+        </div>
+      </header>
+      <main>{page}</main>
+      <footer className="footer">
+        <p>{t.credits}</p>
+      </footer>
+    </LangContext>
   )
 }
 
-function PhotoPicker({
-  label,
-  photo,
-  onChange,
-}: {
-  label: string
-  photo: File | null
-  onChange: (photo: File | null) => void
-}) {
-  return (
-    <label className="picker">
-      {photo ? photo.name : label}
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
-      />
-    </label>
-  )
+/** The condition from the last scan, if it was of this card (or one of its candidates). */
+function scannedCondition({ result }: ScanState, cardId: string): ConditionEstimate | null {
+  if (!result?.condition) return null
+  const ids = [result.match?.card_id, ...result.candidates.map((card) => card.card_id)]
+  return ids.includes(cardId) ? result.condition : null
 }
 
-function ScanOutcome({ result }: { result: ScanResult }) {
-  switch (result.status) {
-    case 'matched':
-      return result.match ? <CardMatch card={result.match} /> : null
-    case 'ambiguous':
-      return (
-        <section className="candidates">
-          <p>Il codice {result.code?.raw} corrisponde a più espansioni. Qual è la tua?</p>
-          {result.candidates.map((card) => (
-            <CardMatch key={card.card_id} card={card} />
-          ))}
-        </section>
-      )
-    case 'unreadable':
-      return (
-        <p>
-          Non riesco a leggere il codice in basso sulla carta. Riprova con una foto più nitida e
-          ben illuminata.
-        </p>
-      )
-    case 'not_found':
-      return <p>Il codice {result.code?.raw} non corrisponde a nessuna carta conosciuta.</p>
-  }
-}
-
-function CardMatch({ card }: { card: CardSummary }) {
+function Missing() {
+  const { t } = useLang()
   return (
-    <article className="card">
-      {card.image_url && <img src={card.image_url} alt={card.name} />}
-      <h2>{card.name}</h2>
-      <p>
-        {card.set_name} · n. {card.local_number}
-      </p>
-      <p className="price">{card.price_eur != null ? euro.format(card.price_eur) : 'Prezzo n.d.'}</p>
-    </article>
-  )
-}
-
-function ConditionPanel({ condition }: { condition: ConditionEstimate }) {
-  return (
-    <section className="card">
-      <h2>Condizioni (stima indicativa)</h2>
-      {condition.estimate && <p className="price">{CONDITION_LABELS[condition.estimate]}</p>}
-      {condition.front_centering && (
-        <p>Centratura fronte: {formatCentering(condition.front_centering)}</p>
-      )}
-      {condition.back_centering && (
-        <p>Centratura retro: {formatCentering(condition.back_centering)}</p>
-      )}
-      {condition.notes.length > 0 && (
-        <ul>
-          {condition.notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
-      )}
+    <section className="page narrow">
+      <p>{t.pageNotFound}</p>
+      <a href={paths.scan}>{t.goHome}</a>
     </section>
   )
 }
 
-function formatCentering({ left_pct, top_pct }: Centering) {
-  const left = Math.round(left_pct)
-  const top = Math.round(top_pct)
-  return `${left}/${100 - left} orizzontale, ${top}/${100 - top} verticale`
+function Logo() {
+  return (
+    <svg className="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="9" y="6" width="14" height="20" rx="2" className="logo-card" />
+      <path d="M3 9V3h6M23 3h6v6M29 23v6h-6M9 29H3v-6" className="logo-frame" />
+    </svg>
+  )
 }
