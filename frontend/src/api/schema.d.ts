@@ -47,8 +47,11 @@ export interface paths {
          * Search Cards
          * @description Manual search, the fallback when a scan can't read the code.
          *
-         *     A code is matched exactly (same rules as /scan); a name may match
-         *     the same card in several sets, so all of them are returned.
+         *     A code matches exactly: number plus set code and/or official set size
+         *     (leading zeros don't matter). Several cards may share a number and set
+         *     size: all of them are returned, newest set first. When the query is not
+         *     a code, or no card has that code, it is searched as a name, in Italian
+         *     and English.
          */
         get: operations["search_cards_cards_search_get"];
         put?: never;
@@ -89,6 +92,9 @@ export interface paths {
         /**
          * Get Price History
          * @description Daily price history (trend price) for one variant.
+         *
+         *     One point per day saved by the daily price job, over the last `days`
+         *     days. Days when the card had no price are missing.
          */
         get: operations["get_price_history_cards__card_id__prices_get"];
         put?: never;
@@ -135,20 +141,78 @@ export interface components {
              * @example swsh3-136
              */
             card_id: string;
-            /** Name */
+            /**
+             * Name
+             * @description In the requested language when available, else English
+             */
             name: string;
             /** Set Name */
             set_name: string;
+            /**
+             * Set Code
+             * @description Set abbreviation; printed on recent cards only
+             * @example DAA
+             */
+            set_code: string | null;
             /**
              * Local Number
              * @description Number within the set
              * @example 136
              */
             local_number: string;
-            /** Image Url */
+            /**
+             * Set Total
+             * @description Official set size, printed after the slash
+             * @example 189
+             */
+            set_total: number | null;
+            /**
+             * Image Url
+             * @description Card image (WebP): small in search results, large in card details
+             */
             image_url: string | null;
-            /** Rarity */
+            /**
+             * Rarity
+             * @example Uncommon
+             */
             rarity: string | null;
+            /**
+             * Category
+             * @description Pokemon, Trainer or Energy
+             * @example Pokemon
+             */
+            category: string | null;
+            /** Hp */
+            hp: number | null;
+            /**
+             * Types
+             * @example [
+             *       "Colorless"
+             *     ]
+             */
+            types: string[];
+            /** Illustrator */
+            illustrator: string | null;
+            /**
+             * Variants
+             * @description Printed versions
+             * @example [
+             *       "normal",
+             *       "reverse"
+             *     ]
+             */
+            variants: string[];
+            /**
+             * Release Date
+             * @description Release date of the set
+             */
+            release_date: string | null;
+            /**
+             * Cardmarket Id
+             * @description Cardmarket product id
+             */
+            cardmarket_id: number | null;
+            /** @description Null when the card has no Cardmarket product or it is no longer listed */
             prices: components["schemas"]["CardPrices"] | null;
         };
         /** CardPrices */
@@ -156,10 +220,17 @@ export interface components {
             /**
              * Updated At
              * Format: date
+             * @description Day of the Cardmarket price guide they come from
              */
             updated_at: string;
             normal: components["schemas"]["VariantPrices"] | null;
+            /** @description Reverse holo; null if not printed */
             reverse: components["schemas"]["VariantPrices"] | null;
+            /**
+             * Shared With
+             * @description Other cards linked to the same Cardmarket product. If not empty, the catalog may have linked the wrong product, so the prices are uncertain.
+             */
+            shared_with: string[];
         };
         /** CardSummary */
         CardSummary: {
@@ -169,17 +240,35 @@ export interface components {
              * @example swsh3-136
              */
             card_id: string;
-            /** Name */
+            /**
+             * Name
+             * @description In the requested language when available, else English
+             */
             name: string;
             /** Set Name */
             set_name: string;
+            /**
+             * Set Code
+             * @description Set abbreviation; printed on recent cards only
+             * @example DAA
+             */
+            set_code: string | null;
             /**
              * Local Number
              * @description Number within the set
              * @example 136
              */
             local_number: string;
-            /** Image Url */
+            /**
+             * Set Total
+             * @description Official set size, printed after the slash
+             * @example 189
+             */
+            set_total: number | null;
+            /**
+             * Image Url
+             * @description Card image (WebP): small in search results, large in card details
+             */
             image_url: string | null;
             /**
              * Price Eur
@@ -204,7 +293,7 @@ export interface components {
         };
         /**
          * CollectorCode
-         * @description The code printed at the bottom of the card, read with OCR.
+         * @description The code printed at the bottom of the card (typed, or read with OCR).
          */
         CollectorCode: {
             /**
@@ -303,6 +392,8 @@ export interface components {
         };
         /** SearchResult */
         SearchResult: {
+            /** @description The card code read from the query; null when it was searched as a name */
+            code: components["schemas"]["CollectorCode"] | null;
             /** Results */
             results: components["schemas"]["CardSummary"][];
         };
@@ -380,9 +471,10 @@ export interface operations {
     search_cards_cards_search_get: {
         parameters: {
             query: {
-                /** @description Card code ('SVI 025', '136/189') or name ('Pikachu') */
+                /** @description Card code ('SVI 025', '136/189', 'SWSH020') or name ('Pikachu') */
                 q: string;
                 lang?: "it" | "en";
+                limit?: number;
             };
             header?: never;
             path?: never;

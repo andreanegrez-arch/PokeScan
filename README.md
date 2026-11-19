@@ -7,9 +7,9 @@ A portfolio project that covers both **software development** (React + FastAPI
 web app, computer vision) and **data analysis** (daily price pipeline, SQL,
 analysis notebooks).
 
-> **Status:** data pipelines in place: the card catalog and the daily price
-> history are collected. The API contract and frontend are sketched; the
-> endpoints return `501 Not Implemented` until they are built.
+> **Status:** the card catalog and the daily price history are collected, and
+> the search, card detail and price history endpoints work. The scan
+> (`/scan`) returns `501 Not Implemented` until recognition is built.
 
 ## How a scan works
 
@@ -203,6 +203,22 @@ Register-ScheduledTask -TaskName "PokeScan - prezzi Cardmarket" -Action $action 
 accept `lang=it|en`. Card ids are TCGdex ids (e.g. `swsh3-136`), prices are in
 EUR, variants are `normal` and `reverse` (reverse holo).
 
+**Search** reads the query as a card code when it is one, using the same rules
+the scan will use:
+
+| Query | Matches |
+|---|---|
+| `DAA 136`, `SVI 025/198`, `svi 25` | set code + number (leading zeros and spacing don't matter) |
+| `136/189` | number + official set size: may match several sets (here *Darkness Ablaze* and *Astral Radiance*), newest first |
+| `TG05/TG30`, `SWSH020` | subset and promo numbers |
+| `Pikachu`, `ricerca accademica` | names in Italian or English: exact names first, then newest sets |
+
+Names, set names and images come in the requested language, falling back to
+English. Card details include `prices.shared_with`: the other cards linked to
+the same Cardmarket product (see the known limitation of the catalog), whose
+prices are therefore uncertain. If PostgreSQL is down, the endpoints answer
+`503`.
+
 ## Data sources
 
 | Source | Used for | Updated |
@@ -218,7 +234,7 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 - [x] Skeleton: API contract, database schema, frontend
 - [x] Daily price snapshot job (Cardmarket price guide)
 - [x] Card catalog import from TCGdex
-- [ ] Search and card detail endpoints
+- [x] Search and card detail endpoints
 - [ ] Card identification from the printed code (OCR + set symbol)
 - [ ] Condition estimate: centering, edge whitening
 - [ ] Price history chart in the frontend

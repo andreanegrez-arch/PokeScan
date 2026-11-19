@@ -25,10 +25,18 @@ Condition = Literal[
 
 class CardBase(BaseModel):
     card_id: str = Field(description="TCGdex card id", examples=["swsh3-136"])
-    name: str
+    name: str = Field(description="In the requested language when available, else English")
     set_name: str
+    set_code: str | None = Field(
+        description="Set abbreviation; printed on recent cards only", examples=["DAA"]
+    )
     local_number: str = Field(description="Number within the set", examples=["136"])
-    image_url: str | None
+    set_total: int | None = Field(
+        description="Official set size, printed after the slash", examples=[189]
+    )
+    image_url: str | None = Field(
+        description="Card image (WebP): small in search results, large in card details"
+    )
 
 
 class CardSummary(CardBase):
@@ -37,17 +45,13 @@ class CardSummary(CardBase):
     )
 
 
-class SearchResult(BaseModel):
-    results: list[CardSummary]
-
-
 # ---------------------------------------------------------------------------
-# Scan
+# Codes and search
 # ---------------------------------------------------------------------------
 
 
 class CollectorCode(BaseModel):
-    """The code printed at the bottom of the card, read with OCR."""
+    """The code printed at the bottom of the card (typed, or read with OCR)."""
 
     raw: str = Field(description="Text as read", examples=["SVI 025/198"])
     set_code: str | None = Field(
@@ -57,6 +61,18 @@ class CollectorCode(BaseModel):
     total: str | None = Field(
         description="Official set size, printed after the slash", examples=["198"]
     )
+
+
+class SearchResult(BaseModel):
+    code: CollectorCode | None = Field(
+        description="The card code read from the query; null when it was searched as a name"
+    )
+    results: list[CardSummary]
+
+
+# ---------------------------------------------------------------------------
+# Scan
+# ---------------------------------------------------------------------------
 
 
 class Centering(BaseModel):
@@ -120,14 +136,31 @@ class VariantPrices(BaseModel):
 
 
 class CardPrices(BaseModel):
-    updated_at: dt.date
+    updated_at: dt.date = Field(description="Day of the Cardmarket price guide they come from")
     normal: VariantPrices | None
-    reverse: VariantPrices | None
+    reverse: VariantPrices | None = Field(description="Reverse holo; null if not printed")
+    shared_with: list[str] = Field(
+        description=(
+            "Other cards linked to the same Cardmarket product. If not empty, the "
+            "catalog may have linked the wrong product, so the prices are uncertain."
+        )
+    )
 
 
 class CardDetail(CardBase):
-    rarity: str | None
-    prices: CardPrices | None
+    rarity: str | None = Field(examples=["Uncommon"])
+    category: str | None = Field(examples=["Pokemon"], description="Pokemon, Trainer or Energy")
+    hp: int | None
+    types: list[str] = Field(examples=[["Colorless"]])
+    illustrator: str | None
+    variants: list[str] = Field(
+        description="Printed versions", examples=[["normal", "reverse"]]
+    )
+    release_date: dt.date | None = Field(description="Release date of the set")
+    cardmarket_id: int | None = Field(description="Cardmarket product id")
+    prices: CardPrices | None = Field(
+        description="Null when the card has no Cardmarket product or it is no longer listed"
+    )
 
 
 class PricePoint(BaseModel):
