@@ -8,8 +8,8 @@ web app, computer vision) and **data analysis** (daily price pipeline, SQL,
 analysis notebooks).
 
 > **Status:** the backend works end to end: the card catalog and the daily
-> price history are collected, and the scan, search, card detail and price
-> history endpoints work. Still to build: the condition estimate and the
+> price history are collected, and the scan (with the condition estimate),
+> search, card detail and price history endpoints work. Still to build: the
 > frontend screens.
 
 ## How a scan works
@@ -29,6 +29,7 @@ card from the **code printed at the bottom**, never from the artwork alone:
    top.
 5. Still undecided: show the candidates and let the user choose.
    No code readable: ask for a better photo (or a manual search by code).
+6. A card was found: estimate its condition (see [Condition](#condition)).
 
 ### How well it works
 
@@ -43,7 +44,7 @@ eras, English and Italian):
 | Several candidates, the right one missing | 0.0% | 0.3% |
 | Code read, but no card has it | 0.3% | 0.0% |
 | No code read (asks for a better photo) | 0.7% | 2.7% |
-| Median time per scan (CPU only) | 0.76 s | 0.65 s |
+| Median time per scan, front centering included (laptop CPU) | 1.72 s | 1.51 s |
 
 *Clean images* are TCGdex's scans of the cards. *Synthetic photos* put them on
 a random background with a tilt (sometimes sideways or upside down),
@@ -52,15 +53,62 @@ have glare, sleeves and fingers, so expect lower numbers until it is measured
 on real photos. Remaining errors: partly read codes (`1/ 9`), sets of the same
 size where the name doesn't settle it (e.g. the two halves of a Trainer Kit
 hold the same card), and Italian cards of sets TCGdex has no Italian names
-for. One row per card is in
+for. One row per card, with the centering measured on both, is in
 [`analysis/data/scan_evaluation.csv`](analysis/data/scan_evaluation.csv).
 
 ### Condition
 
-Not built yet. With an optional photo of the back, PokeScan will also
-estimate the condition: centering (front and back) and whitening on the
-edges. It will be an indicative estimate on Cardmarket's scale, not a
-professional grade.
+With a photo of the back too, PokeScan estimates the condition on
+Cardmarket's scale (Mint to Poor). It is an **indicative estimate from
+photos, not a professional grade**: it measures centering and whitening on
+the edges, not bends, creases or scratches on the surface.
+
+- **Centering**, front and back: how wide the printed border is on each
+  side, e.g. 55/45 left-right. The outline used for recognition is only
+  roughly right, so the card's four edges are found first and the card is
+  straightened from where they meet. On each side the border runs from the
+  card's edge to where its color stops for at least about 1 mm, so text
+  printed on the border (the copyright line) doesn't end it. A result is
+  dropped when it doesn't look like one printed border: left + right far
+  from top + bottom, or sides of different colors.
+- **Whitening**, on the back: its dark blue border turns white where the
+  edges and corners are worn. PokeScan measures the share of white pixels in
+  a 1 mm band along the edge, for each corner and side, and names the worn
+  ones.
+- **Grade**: the best grade that every measure allows. These are PokeScan's
+  own thresholds, not Cardmarket's (which has no numeric ones):
+
+| Grade | Front centering, worse side | Back centering | Most worn corner or side | Whole edge |
+|---|---|---|---|---|
+| Mint | 55/45 | 60/40 | 1% | 0.5% |
+| Near Mint | 60/40 | 70/30 | 6% | 1.5% |
+| Excellent | 70/30 | 80/20 | 20% | 4% |
+| Good | any | any | any | 10% |
+| Light Played | any | any | any | 20% |
+| Played | any | any | any | 35% |
+| Poor | | | | more |
+
+Without the back photo, `/scan` gives the front's centering only. Photograph
+the back on a **dark, plain surface**: on a light one the edge can't be told
+apart from whitening, and PokeScan says so instead of grading.
+
+How well the centering works, from the same evaluation (front only, on the
+255 cards identified that have a plain border):
+
+| | Synthetic photos |
+|---|---:|
+| Centering measured | 90.6% |
+| Error, median | 1.0 points |
+| Error, 90th percentile | 2.3 points |
+| Error over 5 points | 5 cards (2.2%) |
+
+The error is the difference from the centering measured on the clean image,
+on the worse of left-right and top-bottom: 1 point is 51/49 instead of
+50/50, a few hundredths of a millimeter of border. When the borders don't add up,
+PokeScan gives no centering rather than a wrong one. Cards without a plain
+border (full art) are not measured. Whitening has only been tested on drawn
+card backs (`backend/tests/test_condition.py`): TCGdex has no photos of
+card backs, so it still has to be measured on real ones.
 
 ## Architecture
 
@@ -234,7 +282,8 @@ Register-ScheduledTask -TaskName "PokeScan - prezzi Cardmarket" -Action $action 
 | GET    | `/cards/{card_id}`            | Card details and latest Cardmarket prices            |
 | GET    | `/cards/{card_id}/prices`     | Daily price history for one variant                  |
 
-`/scan` takes a `front` photo and an optional `back` photo. All endpoints
+`/scan` takes a `front` photo and an optional `back` photo, and answers with
+the card (or the candidates) and its `condition`. All endpoints
 accept `lang=it|en`. Card ids are TCGdex ids (e.g. `swsh3-136`), prices are in
 EUR, variants are `normal` and `reverse` (reverse holo).
 
@@ -271,9 +320,10 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 - [x] Card catalog import from TCGdex
 - [x] Search and card detail endpoints
 - [x] Card identification from the printed code (OCR, set code, card name)
+- [x] Condition estimate: centering, edge whitening
 - [ ] Settle the remaining ties by comparing the set symbol or the artwork
-- [ ] Measure recognition on real phone photos
-- [ ] Condition estimate: centering, edge whitening
+- [ ] Measure recognition and condition on real phone photos (whitening has
+      only been tested on drawn card backs)
 - [ ] Price history chart in the frontend
 - [ ] Analysis notebooks
 - [ ] Deploy

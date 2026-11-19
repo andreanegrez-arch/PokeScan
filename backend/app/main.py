@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.pool.close()
 
 
-app = FastAPI(title="PokeScan API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="PokeScan API", version="0.3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

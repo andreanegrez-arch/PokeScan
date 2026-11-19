@@ -1,9 +1,10 @@
-"""Measure how well the scan recognizes cards.
+"""Measure how well the scan recognizes cards and measures their centering.
 
 Takes a random sample of catalog cards and, for each, turns TCGdex's image of
 the card into a phone-like photo: random background, tilt, perspective,
 lighting, blur, noise and JPEG compression. Then scans it and checks the
-answer against the card it came from.
+answer against the card it came from, and the front's centering against the
+one measured on the clean image.
 
 Only a stand-in for real photos: no glare, sleeves, fingers or worn cards.
 TCGdex images are downloaded once into backend/.cache/scan_evaluation/.
@@ -30,7 +31,8 @@ import httpx
 import numpy as np
 
 from app.db import connect
-from app.recognition.detect import CARD_RATIO
+from app.recognition import condition
+from app.recognition.detect import CARD_RATIO, as_card, decode
 from app.recognition.identify import identify
 
 log = logging.getLogger("evaluate_scan")
@@ -173,6 +175,28 @@ def outcome(card_id: str, result) -> str:
     return result.status
 
 
+def clean_centering(card: np.ndarray):
+    """Centering measured on TCGdex's image: None without a plain border."""
+    cropped = as_card(card[:, :, :3])
+    borders = condition.measure_borders(cropped, None) if cropped is not None else None
+    return condition.centering(borders) if borders is not None else None
+
+
+def centering_columns(truth, measured) -> dict:
+    """Both centerings, and the error: the worse of left-right and top-bottom, in points."""
+    error = ""
+    if truth and measured:
+        error = round(max(abs(truth.left_pct - measured.left_pct),
+                          abs(truth.top_pct - measured.top_pct)), 1)
+    return {
+        "clean_left_pct": truth.left_pct if truth else "",
+        "clean_top_pct": truth.top_pct if truth else "",
+        "photo_left_pct": measured.left_pct if measured else "",
+        "photo_top_pct": measured.top_pct if measured else "",
+        "centering_error": error,
+    }
+
+
 def run(count: int, seed: int, clean: bool) -> int:
     rng = np.random.default_rng(seed)
     with connect() as conn:
@@ -193,8 +217,9 @@ def run(count: int, seed: int, clean: bool) -> int:
             photo_rng = np.random.default_rng([seed, zlib.crc32(card_id.encode())])
             photo = image if clean else make_photo(card, photo_rng)
             started = time.perf_counter()
-            result = identify(conn, photo, lang)
+            result = identify(conn, decode(photo), lang)
             seconds = time.perf_counter() - started
+            measured = result.condition.front_centering if result.condition else None
             rows.append({
                 "card_id": card_id,
                 "lang": lang,
@@ -204,6 +229,7 @@ def run(count: int, seed: int, clean: bool) -> int:
                 "answer": result.match.card_id if result.match else
                           " ".join(c.card_id for c in result.candidates),
                 "seconds": round(seconds, 3),
+                **centering_columns(clean_centering(card), measured),
             })
             if len(rows) % 25 == 0:
                 log.info("Scanned %d/%d", len(rows), len(sample))
@@ -222,6 +248,19 @@ def run(count: int, seed: int, clean: bool) -> int:
     times = sorted(row["seconds"] for row in rows)
     print(f"  time per scan: median {statistics.median(times):.2f}s, "
           f"slowest {times[-1]:.2f}s")
+
+    found = [row for row in rows if row["outcome"] in ("correct", "choice")]
+    bordered = [row for row in found if row["clean_left_pct"] != ""]
+    errors = sorted(row["centering_error"] for row in bordered if row["centering_error"] != "")
+    print(f"\nFront centering, on the {len(bordered)} cards found that have a measurable "
+          "border on the clean image:")
+    if errors:
+        print(f"  measured on the photo: {len(errors)} ({len(errors) / len(bordered):.1%})")
+        print(f"  error, worse of left-right and top-bottom: median {statistics.median(errors)}, "
+              f"90th percentile {errors[int(0.9 * (len(errors) - 1))]}, "
+              f"over 5 points {sum(e > 5 for e in errors)}")
+    unchecked = sum(row["photo_left_pct"] != "" and row["clean_left_pct"] == "" for row in found)
+    print(f"  measured on the photo but not on the clean image (can't be checked): {unchecked}")
     print("\nBy series (correct / cards):")
     by_series: dict[str, list[str]] = defaultdict(list)
     for row in rows:

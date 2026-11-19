@@ -26,8 +26,10 @@ export interface paths {
          *        next to the number, then the one whose name is printed at the top;
          *     5. still undecided: status 'ambiguous'. No code read: 'unreadable'.
          *
-         *     The condition estimate is not available yet: `condition` is null. The
-         *     optional back photo will be used for it (back centering, edge whitening).
+         *     When a card is found, `condition` holds the front's centering and, with
+         *     the optional back photo, the back's centering, the whitening on its
+         *     edges and an indicative grade (null without the back). Photograph the
+         *     back on a dark, plain surface.
          */
         post: operations["scan_card_scan_post"];
         delete?: never;

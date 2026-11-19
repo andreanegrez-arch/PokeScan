@@ -56,20 +56,34 @@ def _looks_like_a_card(corners: np.ndarray) -> bool:
     return abs(width / height - CARD_RATIO) <= RATIO_TOLERANCE * CARD_RATIO
 
 
-def find_outline(image: np.ndarray) -> np.ndarray | None:
+def _edges(small: np.ndarray, color: bool) -> np.ndarray:
+    # The median blur wipes out textures (wood, cloth) but keeps straight edges.
+    if not color:
+        return cv2.Canny(cv2.medianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), 7), 30, 120)
+    # Changes of color too, not only of brightness: a silver border on a
+    # table just as bright. Edges of L, a and b in Lab, with a and b scaled
+    # like L (0-100 -> 0-255) around their middle (128).
+    # Two 5 px median blurs: on color images, much faster than one of 7 px.
+    blurred = cv2.medianBlur(cv2.medianBlur(small, 5), 5)
+    lightness, a, b = cv2.split(cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB))
+    edges = cv2.Canny(lightness, 30, 120)
+    for channel in (a, b):
+        scaled = cv2.addWeighted(channel, 2.5, channel, 0, -1.5 * 128)
+        edges |= cv2.Canny(scaled, 30, 120)
+    return edges
+
+
+def find_outline(image: np.ndarray, color: bool = False) -> np.ndarray | None:
     """The card's four corners in the photo (ordered), or None if not found.
 
     Of the shapes with a card's proportions, the largest: the card's edge
-    rather than a frame printed inside it.
+    rather than a frame printed inside it. `color`: look for changes of color
+    too, not only of brightness.
     """
     height, width = image.shape[:2]
     scale = min(1.0, DETECTION_SIDE / max(height, width))
     small = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-
-    # The median blur wipes out textures (wood, cloth) but keeps straight edges.
-    gray = cv2.medianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), 7)
-    edges = cv2.Canny(gray, 30, 120)
-    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=2)
+    edges = cv2.dilate(_edges(small, color), np.ones((3, 3), np.uint8), iterations=2)
     contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
     min_area = MIN_AREA * small.shape[0] * small.shape[1]
@@ -100,12 +114,16 @@ def enlarge(corners: np.ndarray, factor: float = 1.12) -> np.ndarray:
     return (center + (corners - center) * factor).astype(np.float32)
 
 
-def straighten(image: np.ndarray, corners: np.ndarray) -> np.ndarray:
+def straightening(corners: np.ndarray) -> np.ndarray:
+    """The perspective transform from the photo to the upright card, CARD_SIZE."""
     width, height = CARD_SIZE
     target = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
                       dtype=np.float32)
-    matrix = cv2.getPerspectiveTransform(corners, target)
-    return cv2.warpPerspective(image, matrix, CARD_SIZE)
+    return cv2.getPerspectiveTransform(corners, target)
+
+
+def straighten(image: np.ndarray, corners: np.ndarray) -> np.ndarray:
+    return cv2.warpPerspective(image, straightening(corners), CARD_SIZE)
 
 
 def find_card(image: np.ndarray) -> np.ndarray | None:

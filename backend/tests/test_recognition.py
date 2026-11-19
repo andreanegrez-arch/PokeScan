@@ -168,7 +168,7 @@ def catalog(db):
 
 
 def test_a_code_with_its_set_code_is_matched(catalog):
-    result = identify(catalog, photo("SVI EN 025/198", "Pikachu"), "it")
+    result = identify(catalog, detect.decode(photo("SVI EN 025/198", "Pikachu")), "it")
 
     assert result.status == "matched"
     assert result.match.card_id == "sv01-025"
@@ -177,35 +177,35 @@ def test_a_code_with_its_set_code_is_matched(catalog):
 
 def test_without_set_code_the_name_picks_between_sets_of_the_same_size(catalog):
     # sv01 and swsh6 both have 198 cards: number 025 is Pikachu in one, Snom in the other.
-    result = identify(catalog, photo("025/198", "Snom"), "it")
+    result = identify(catalog, detect.decode(photo("025/198", "Snom")), "it")
 
     assert result.status == "matched"
     assert result.match.card_id == "swsh6-025"
 
 
 def test_an_upside_down_card_is_read(catalog):
-    result = identify(catalog, photo("136/189", "Furret", turn=180), "it")
+    result = identify(catalog, detect.decode(photo("136/189", "Furret", turn=180)), "it")
 
     assert result.status == "matched"
     assert result.match.card_id == "swsh3-136"
 
 
 def test_cards_with_the_same_code_and_name_are_left_to_the_user(catalog):
-    result = identify(catalog, photo("58/102", "Pikachu"), "it")
+    result = identify(catalog, detect.decode(photo("58/102", "Pikachu")), "it")
 
     assert result.status == "ambiguous"
     assert [c.card_id for c in result.candidates] == ["old2-58", "old1-58"]
 
 
 def test_a_code_no_card_has_is_not_found(catalog):
-    result = identify(catalog, photo("999/999", "Nobody"), "it")
+    result = identify(catalog, detect.decode(photo("999/999", "Nobody")), "it")
 
     assert result.status == "not_found"
     assert (result.code.number, result.code.total) == ("999", "999")
 
 
 def test_a_photo_without_code_is_unreadable(catalog):
-    result = identify(catalog, photo("", "Pikachu"), "it")
+    result = identify(catalog, detect.decode(photo("", "Pikachu")), "it")
 
     assert result.status == "unreadable"
     assert result.code is None
@@ -232,7 +232,9 @@ def test_scan_endpoint_identifies_the_card_from_the_front_photo_alone(client):
     body = response.json()
     assert body["status"] == "matched"
     assert body["match"]["card_id"] == "swsh3-136"
-    assert body["condition"] is None
+    # Without the back: the front's centering, no grade.
+    assert body["condition"]["front_centering"] is not None
+    assert body["condition"]["estimate"] is None
 
 
 def test_scan_endpoint_refuses_files_that_are_not_images(client):
@@ -245,3 +247,29 @@ def test_scan_endpoint_refuses_files_that_are_not_images(client):
     response = client.post("/scan", files={"front": broken})
     assert response.status_code == 422
     assert response.json()["detail"] == "card.png: not a readable image"
+
+
+def test_scan_endpoint_estimates_the_condition_with_the_back(client):
+    from tests.test_condition import drawn_back
+
+    front = ("front.jpg", photo("DAA 136/189", "Furret"), "image/jpeg")
+    back = ("back.jpg", make_photo(drawn_back(), np.random.default_rng(2), turn=0,
+                                   background=GREEN_TABLE), "image/jpeg")
+
+    response = client.post("/scan", files={"front": front, "back": back})
+
+    assert response.status_code == 200
+    condition = response.json()["condition"]
+    assert condition["estimate"] is not None
+    assert condition["back_centering"] is not None
+    assert condition["edge_whitening_pct"] is not None
+
+
+def test_scan_endpoint_names_the_unreadable_back(client):
+    front = ("front.jpg", photo("136/189", "Furret"), "image/jpeg")
+    broken = ("back.png", b"\x89PNG not really", "image/png")
+
+    response = client.post("/scan", files={"front": front, "back": broken})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "back.png: not a readable image"

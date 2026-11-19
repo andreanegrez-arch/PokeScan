@@ -10,13 +10,16 @@
    code was printed next to the number, then those whose name is printed at
    the top of the card.
 5. Still more than one: 'ambiguous', and the user picks.
+6. A card was found: estimate its condition from the same photo and, if
+   given, a photo of the back (see condition.py).
 """
 
+import numpy as np
 import psycopg
 
 from app import catalog
-from app.recognition import detect, text
-from app.schemas import CardSummary, CollectorCode, Lang, ScanResult
+from app.recognition import condition, detect, text
+from app.schemas import CardSummary, CollectorCode, ConditionEstimate, Lang, ScanResult
 
 MAX_CANDIDATES = 20
 
@@ -63,7 +66,8 @@ def _whole(view):
 
 
 def _views(image):
-    """Ways to look at the photo, most likely first: (image, code region, name region).
+    """Ways to look at the photo, most likely first:
+    (image, code region, name region, turned upside down).
 
     Each is tried both ways up, until a collector code is read.
     """
@@ -77,11 +81,11 @@ def _views(image):
     if cropped is not None:
         cards.append(cropped)
     for card in cards:
-        yield card, detect.bottom_strip, detect.top_strip
-        yield detect.upside_down(card), detect.bottom_strip, detect.top_strip
+        yield card, detect.bottom_strip, detect.top_strip, False
+        yield detect.upside_down(card), detect.bottom_strip, detect.top_strip, True
     # Last resort: read the whole photo.
-    yield image, _whole, None
-    yield detect.upside_down(image), _whole, None
+    yield image, _whole, None, False
+    yield detect.upside_down(image), _whole, None, True
 
 
 def _look_up(
@@ -94,17 +98,20 @@ def _look_up(
     return (codes[0] if codes else None), []
 
 
-def _result(status, code=None, match=None, candidates=()) -> ScanResult:
+def _result(
+    status, code=None, match=None, candidates=(), condition: ConditionEstimate | None = None
+) -> ScanResult:
     return ScanResult(
-        status=status, code=code, match=match, candidates=list(candidates), condition=None
+        status=status, code=code, match=match, candidates=list(candidates), condition=condition
     )
 
 
-def identify(conn: psycopg.Connection, photo: bytes, lang: Lang) -> ScanResult:
-    """Identify the card in a photo. Raises detect.UnreadableImage for non-images."""
-    image = detect.decode(photo)
+def identify(
+    conn: psycopg.Connection, image: np.ndarray, lang: Lang, back: np.ndarray | None = None
+) -> ScanResult:
+    """Identify the card in a photo (see detect.decode) and estimate its condition."""
     first_code: CollectorCode | None = None
-    for view, code_region, name_region in _views(image):
+    for view, code_region, name_region, turned in _views(image):
         lines = text.read_lines(code_region(view))
         reading = text.read_code(lines)
         code, candidates = _look_up(conn, reading.codes, lang)
@@ -123,6 +130,7 @@ def identify(conn: psycopg.Connection, photo: bytes, lang: Lang) -> ScanResult:
         names = catalog.names_of(conn, [c.card_id for c in candidates])
         candidates = by_name(candidates, names, name_lines)
 
+    estimate = condition.assess(image, turned, back, lang)
     if len(candidates) == 1:
-        return _result("matched", code, match=candidates[0])
-    return _result("ambiguous", code, candidates=candidates)
+        return _result("matched", code, match=candidates[0], condition=estimate)
+    return _result("ambiguous", code, candidates=candidates, condition=estimate)
