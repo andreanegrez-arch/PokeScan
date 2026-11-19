@@ -1,40 +1,14 @@
 """Tests of the price history against a real PostgreSQL.
 
 They run in a throwaway database (pokescan_test), created and dropped by the
-fixture, and are skipped when PostgreSQL can't be reached.
+fixture in conftest.py, and are skipped when PostgreSQL can't be reached.
 """
 
 import datetime as dt
 
-import psycopg
-import pytest
-from psycopg import sql
-
 from app.db import connect
-from app.init_db import SCHEMA_FILE
 from jobs import snapshot_prices
 from jobs.snapshot_prices import created_at, latest_saved_day, save_snapshot, to_rows
-
-TEST_DB = "pokescan_test"
-
-
-@pytest.fixture
-def db():
-    try:
-        admin = connect(dbname="postgres", autocommit=True, connect_timeout=3)
-    except psycopg.OperationalError:
-        pytest.skip("PostgreSQL is not reachable")
-    with admin:
-        admin.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(TEST_DB)))
-        admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(TEST_DB)))
-
-    with connect(dbname=TEST_DB) as conn:
-        conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
-        conn.commit()
-        yield conn
-
-    with connect(dbname="postgres", autocommit=True) as admin:
-        admin.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(TEST_DB)))
 
 
 def guide(day: int, trends: dict[int, float]) -> dict:
@@ -112,7 +86,7 @@ def test_daily_view_rebuilds_the_full_price_list_of_each_day(db):
 
 def test_job_skips_days_already_saved_and_older_files(db, monkeypatch):
     monkeypatch.setattr(snapshot_prices, "check_plausible", lambda rows: None)
-    monkeypatch.setattr(snapshot_prices, "connect", lambda: connect(dbname=TEST_DB))
+    monkeypatch.setattr(snapshot_prices, "connect", lambda: connect(dbname=db.info.dbname))
 
     def run_with(price_guide):
         monkeypatch.setattr(snapshot_prices, "download_price_guide", lambda: price_guide)

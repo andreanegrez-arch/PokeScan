@@ -7,8 +7,9 @@ A portfolio project that covers both **software development** (React + FastAPI
 web app, computer vision) and **data analysis** (daily price pipeline, SQL,
 analysis notebooks).
 
-> **Status:** skeleton. The API contract, database schema and frontend are in
-> place; the endpoints return `501 Not Implemented` until they are built.
+> **Status:** data pipelines in place: the card catalog and the daily price
+> history are collected. The API contract and frontend are sketched; the
+> endpoints return `501 Not Implemented` until they are built.
 
 ## How a scan works
 
@@ -50,7 +51,7 @@ analysis/ (SQL + Jupyter) ──► PostgreSQL
 ## Project structure
 
 ```
-backend/    FastAPI app, daily price job, tests
+backend/    FastAPI app, catalog import, daily price job, tests
 db/         PostgreSQL schema
 frontend/   React + TypeScript app
 analysis/   SQL queries and Jupyter notebooks
@@ -76,6 +77,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 cp .env.example .env            # then set DATABASE_PASSWORD in .env
 python -m app.init_db           # creates the database and the tables
+python -m jobs.import_catalog   # card catalog from TCGdex (first run: ~15 min)
 uvicorn app.main:app --reload
 ```
 
@@ -94,6 +96,47 @@ Open <http://localhost:5173>.
 The TypeScript API types in `frontend/src/api/schema.d.ts` are generated from
 the backend. After changing `backend/app/schemas.py`, start the backend and run
 `npm run gen:api`.
+
+### Catalog import
+
+Imports every Pokémon TCG set and card from [TCGdex](https://tcgdex.dev), in
+English and Italian. Pokémon TCG Pocket (digital only) is left out.
+
+| Table | Content |
+|---|---|
+| `sets` | Series, printed set code (`SVI`), official size (the `198` in `025/198`), symbol, release date. |
+| `set_translations` | Set name and logo per language. |
+| `cards` | Number in the set, rarity, category, types, HP, variants, illustrator, and `cardmarket_id`, which joins to the price tables. |
+| `card_translations` | Card name and image per language. |
+
+TCGdex gives the Cardmarket id only on each card's own page, so the first run
+reads about 21,000 pages. It saves every 500 cards: if interrupted, run it
+again and it resumes. Later runs read only new cards, plus (once a week) cards
+still without a Cardmarket id. Running it weekly is enough: new sets come out
+every few months.
+
+```bash
+cd backend
+python -m jobs.import_catalog
+```
+
+First import: 206 sets and 21,432 cards (14,640 with Italian names); 96% of
+the cards have a Cardmarket id. **Known limitation:** about 1,800 cards share
+their Cardmarket id with another card, mostly TCGdex mapping errors in older
+sets (e.g. the regular and the full-art Trevenant EX of *Primal Clash* point to
+the same product). The price of such a card is uncertain until those ids are
+cross-checked with Cardmarket's product list.
+
+Prices of one card, e.g. the latest daily price list joined to the catalog:
+
+```sql
+SELECT c.card_id, t.name, p.trend, p.trend_holo AS trend_reverse
+FROM cards c
+JOIN card_translations t ON t.card_id = c.card_id AND t.lang = 'it'
+JOIN cardmarket_prices_daily p ON p.id_product = c.cardmarket_id
+WHERE c.card_id = 'swsh3-136'
+  AND p.day = (SELECT max(snapshot_date) FROM price_guide_runs);
+```
 
 ### Daily price job
 
@@ -161,7 +204,7 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 
 - [x] Skeleton: API contract, database schema, frontend
 - [x] Daily price snapshot job (Cardmarket price guide)
-- [ ] Card catalog import from TCGdex
+- [x] Card catalog import from TCGdex
 - [ ] Search and card detail endpoints
 - [ ] Card identification from the printed code (OCR + set symbol)
 - [ ] Condition estimate: centering, edge whitening

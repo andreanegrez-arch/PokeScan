@@ -4,11 +4,15 @@
 -- prices come from Cardmarket's daily price guide.
 
 -- ---------------------------------------------------------------------------
--- Catalog (imported from TCGdex)
+-- Catalog (imported from TCGdex by backend/jobs/import_catalog.py)
+-- Image columns hold TCGdex base URLs: add "/high.webp" (cards) or ".webp"
+-- (logos, symbols) to get the file.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS sets (
     set_id          TEXT PRIMARY KEY,
+    series_id       TEXT,               -- e.g. 'sv'
+    series_name     TEXT,               -- e.g. 'Scarlet & Violet'
     abbreviation    TEXT,               -- e.g. 'SVI'; printed on recent cards only
     official_count  INTEGER,            -- printed after the slash: 198 in '025/198'
     total_count     INTEGER,            -- including secret rares numbered above it
@@ -16,20 +20,30 @@ CREATE TABLE IF NOT EXISTS sets (
     release_date    DATE
 );
 
--- Set names differ by language.
+-- Set names and logos differ by language.
 CREATE TABLE IF NOT EXISTS set_translations (
-    set_id  TEXT NOT NULL REFERENCES sets (set_id),
-    lang    TEXT NOT NULL,              -- 'it', 'en'
-    name    TEXT NOT NULL,
+    set_id    TEXT NOT NULL REFERENCES sets (set_id),
+    lang      TEXT NOT NULL,            -- 'it', 'en'
+    name      TEXT NOT NULL,
+    logo_url  TEXT,
     PRIMARY KEY (set_id, lang)
 );
 
 CREATE TABLE IF NOT EXISTS cards (
-    card_id        TEXT PRIMARY KEY,
-    set_id         TEXT NOT NULL REFERENCES sets (set_id),
-    local_number   TEXT NOT NULL,       -- number within the set; may contain letters
-    rarity         TEXT,                -- stored in English
-    cardmarket_id  INTEGER,             -- Cardmarket idProduct: joins to cardmarket_prices
+    card_id             TEXT PRIMARY KEY,
+    set_id              TEXT NOT NULL REFERENCES sets (set_id),
+    local_number        TEXT NOT NULL,  -- number within the set; may contain letters
+    category            TEXT,           -- 'Pokemon', 'Trainer' or 'Energy'
+    rarity              TEXT,           -- in English, e.g. 'Uncommon'
+    illustrator         TEXT,
+    regulation_mark     TEXT,           -- e.g. 'G'
+    hp                  INTEGER,
+    stage               TEXT,           -- e.g. 'Basic', 'Stage1'
+    types               TEXT[],         -- e.g. {Fire}
+    dex_ids             INTEGER[],      -- National Pokédex numbers
+    variants            TEXT[],         -- printed versions, e.g. {normal,reverse}
+    cardmarket_id       INTEGER,        -- Cardmarket idProduct: joins to cardmarket_prices
+    details_fetched_at  TIMESTAMPTZ,    -- when the card's own TCGdex page was read
     UNIQUE (set_id, local_number)
 );
 
