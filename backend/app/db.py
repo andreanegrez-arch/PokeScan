@@ -1,8 +1,8 @@
 from collections.abc import Iterator
-from typing import Any
+from typing import Annotated, Any
 
 import psycopg
-from fastapi import Request
+from fastapi import Depends, Request
 from psycopg_pool import ConnectionPool
 
 from app.config import settings
@@ -55,3 +55,7 @@ def get_conn(request: Request) -> Iterator[psycopg.Connection]:
     """FastAPI dependency: a connection from the app's pool for one request."""
     with request.app.state.pool.connection() as conn:
         yield conn
+
+
+# Type of an endpoint parameter that receives a connection.
+DbConnection = Annotated[psycopg.Connection, Depends(get_conn)]

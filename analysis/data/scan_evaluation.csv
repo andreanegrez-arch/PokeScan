@@ -1,0 +1,299 @@
+card_id,lang,series,outcome,read_code,answer,seconds
+sm6-11,it,Sun & Moon,correct,11/131,sm6-11,1.99
+swsh12-028,it,Sword & Shield,correct,028/195,swsh12-028,0.48
+dp3-33,en,Diamond & Pearl,correct,33/132,dp3-33,0.655
+sm11-107,it,Sun & Moon,correct,107/236,sm11-107,0.748
+bw8-60,it,Black & White,correct,60/135,bw8-60,0.42
+sv03.5-186,en,Scarlet & Violet,correct,186/165,sv03.5-186,0.63
+smp-SM143,en,Sun & Moon,correct,SM143,smp-SM143,0.43
+sv01-137,it,Scarlet & Violet,correct,137/198,sv01-137,0.618
+bw4-56,en,Black & White,correct,56/99,bw4-56,0.875
+swsh10.5-031,it,Sword & Shield,correct,031/078,swsh10.5-031,0.791
+gym1-60,en,Gym,correct,60/132,gym1-60,2.03
+sm12-43,it,Sun & Moon,correct,43/236,sm12-43,0.771
+ecard3-139,en,E-Card,correct,139/144,ecard3-139,0.496
+sm10-224,it,Sun & Moon,correct,224/214,sm10-224,0.969
+sv04.5-178,it,Scarlet & Violet,correct,178/091,sv04.5-178,0.701
+sv05-096,en,Scarlet & Violet,correct,096/162,sv05-096,0.546
+sm5-27,it,Sun & Moon,correct,27/156,sm5-27,0.359
+swsh12-060,en,Sword & Shield,correct,060/195,swsh12-060,0.658
+ex11-14,en,EX,correct,14/113,ex11-14,0.539
+sm4-118,it,Sun & Moon,correct,118/111,sm4-118,0.491
+sm4-108,it,Sun & Moon,correct,108/111,sm4-108,0.775
+swsh12-065,en,Sword & Shield,correct,F065/195,swsh12-065,0.437
+bw5-3,en,Black & White,correct,3/108,bw5-3,1.047
+tk-xy-latio-26,it,Trainer kits,correct,26/30,tk-xy-latio-26,0.595
+hgss4-6,en,HeartGold & SoulSilver,correct,6/102,hgss4-6,0.905
+swsh12.5-080,en,Sword & Shield,correct,080/159,swsh12.5-080,0.848
+xy12-64,en,XY,correct,64/108,xy12-64,1.728
+sv02-004,en,Scarlet & Violet,correct,004/193,sv02-004,0.458
+sm4-26,en,Sun & Moon,correct,26/111,sm4-26,0.734
+dp3-2,en,Diamond & Pearl,correct,2/132,dp3-2,0.62
+smp-SM22,en,Sun & Moon,correct,SM22,smp-SM22,0.417
+bw1-76,en,Black & White,correct,76/114,bw1-76,0.672
+lc-105,en,Legendary Collection,correct,105/110,lc-105,0.435
+ex5-10,en,EX,correct,10/101,ex5-10,0.433
+sm9-77,en,Sun & Moon,correct,77/181,sm9-77,0.443
+gym1-80,en,Gym,correct,80/132,gym1-80,0.824
+swsh4.5-65,it,Sword & Shield,correct,065/072,swsh4.5-65,0.689
+tk-xy-w-26,it,Trainer kits,correct,26/30,tk-xy-w-26,0.799
+gym1-59,en,Gym,correct,59/132,gym1-59,0.849
+swsh10-087,en,Sword & Shield,correct,087/189,swsh10-087,0.777
+swsh1-106,en,Sword & Shield,correct,106/202,swsh1-106,0.808
+ex9-69,en,EX,correct,69/106,ex9-69,0.525
+ex9-25,en,EX,correct,25/106,ex9-25,0.45
+bw10-65,en,Black & White,correct,65/101,bw10-65,0.947
+sm12-36,it,Sun & Moon,correct,36/236,sm12-36,0.887
+ecard3-28,en,E-Card,correct,28/144,ecard3-28,0.226
+sv04.5-146,en,Scarlet & Violet,correct,146/091,sv04.5-146,0.658
+me02.5-117,it,Mega Evolution,correct,117/217,me02.5-117,0.535
+ecard1-58,en,E-Card,correct,58/165,ecard1-58,0.872
+ex15-24,en,EX,unreadable,,,2.343
+sv04.5-225,en,Scarlet & Violet,correct,225/091,sv04.5-225,0.516
+swsh3-30,en,Sword & Shield,correct,030/189,swsh3-30,0.834
+hgss4-22,en,HeartGold & SoulSilver,correct,22/102,hgss4-22,0.819
+swsh12.5-115,en,Sword & Shield,correct,W115/159,swsh12.5-115,0.728
+sm10-94,en,Sun & Moon,correct,94/214,sm10-94,1.025
+ex6-15,en,EX,correct,15/112,ex6-15,0.413
+swsh6-56,it,Sword & Shield,correct,056/198,swsh6-56,0.817
+tk-xy-w-14,it,Trainer kits,correct,14/30,tk-xy-w-14,0.795
+sv09-085,en,Scarlet & Violet,correct,TG085/159,sv09-085,0.818
+tk-sm-l-23,it,Trainer kits,choice,23/30,tk-sm-l-23 tk-sm-r-23,0.956
+ex10-36,en,EX,correct,36/115,ex10-36,0.292
+sv08.5-178,en,Scarlet & Violet,correct,178/131,sv08.5-178,0.636
+dp5-56,en,Diamond & Pearl,correct,56/100,dp5-56,0.562
+sv09-182,it,Scarlet & Violet,correct,182/159,sv09-182,0.613
+swsh10-187,it,Sword & Shield,correct,187/189,swsh10-187,0.682
+ecard2-109,en,E-Card,correct,109/147,ecard2-109,0.7
+ex13-10,en,EX,correct,10/110,ex13-10,0.59
+sv01-031,it,Scarlet & Violet,correct,031/198,sv01-031,0.665
+ecard3-80,en,E-Card,correct,80/144,ecard3-80,0.471
+bw9-72,it,Black & White,correct,72/116,bw9-72,0.461
+xy10-23,it,XY,correct,23/124,xy10-23,0.808
+dp7-64,en,Diamond & Pearl,correct,64/100,dp7-64,0.559
+bw6-68,en,Black & White,correct,68/124,bw6-68,0.675
+g1-56,en,XY,correct,56/83,g1-56,0.691
+dp5-8,en,Diamond & Pearl,correct,8/100,dp5-8,0.557
+dp1-89,en,Diamond & Pearl,correct,89/130,dp1-89,0.501
+xy7-99,it,XY,correct,99/98,xy7-99,0.158
+sv04-131,en,Scarlet & Violet,correct,131/182,sv04-131,0.942
+sm9-184,en,Sun & Moon,correct,184/181,sm9-184,0.637
+hgss2-49,en,HeartGold & SoulSilver,correct,49/95,hgss2-49,0.783
+swsh10-198,it,Sword & Shield,correct,F198/189,swsh10-198,0.883
+dp6-28,en,Diamond & Pearl,correct,28/146,dp6-28,1.158
+hgss1-13,en,HeartGold & SoulSilver,correct,13/123,hgss1-13,0.747
+ex12-4,en,EX,correct,4/92,ex12-4,0.324
+ecard1-130,en,E-Card,correct,130/165,ecard1-130,0.539
+ex10-28,en,EX,correct,28/115,ex10-28,0.286
+sm3-159,it,Sun & Moon,correct,159/147,sm3-159,0.615
+swshp-SWSH221,it,Sword & Shield,correct,SWSH221,swshp-SWSH221,0.485
+bw7-60,en,Black & White,correct,60/149,bw7-60,0.636
+pl3-98,en,Platinum,correct,98/147,pl3-98,0.732
+ecard1-98,en,E-Card,unreadable,,,2.235
+smp-SM112,en,Sun & Moon,correct,SM112,smp-SM112,2.331
+swsh11-150,it,Sword & Shield,correct,F150/196,swsh11-150,0.41
+swsh4-90,en,Sword & Shield,correct,090/185,swsh4-90,0.556
+sm5-18,it,Sun & Moon,correct,A18/156,sm5-18,0.673
+sm2-157,it,Sun & Moon,correct,157/145,sm2-157,0.6
+swsh11-109,it,Sword & Shield,correct,109/196,swsh11-109,0.2
+swsh12-017,it,Sword & Shield,correct,017/195,swsh12-017,0.391
+swsh2-121,it,Sword & Shield,correct,121/192,swsh2-121,0.581
+swsh12.5-130,en,Sword & Shield,correct,130/159,swsh12.5-130,0.566
+sm12-45,en,Sun & Moon,correct,45/236,sm12-45,1.013
+sm115-37,en,Sun & Moon,correct,37/68,sm115-37,0.427
+sv10.5w-159,en,Scarlet & Violet,correct,159/086,sv10.5w-159,0.394
+sv10.5w-009,it,Scarlet & Violet,correct,WHT009/086,sv10.5w-009,0.703
+bw4-91,en,Black & White,correct,91/99,bw4-91,0.973
+cel25-21,en,Sword & Shield,correct,021/025,cel25-21,1.019
+xy9-96,it,XY,correct,96/122,xy9-96,0.67
+swshp-SWSH097,it,Sword & Shield,correct,SWSH097,swshp-SWSH097,0.495
+me02.5-234,it,Mega Evolution,correct,234/217,me02.5-234,0.391
+neo1-12,en,Neo,correct,12/111,neo1-12,0.95
+sv09-110,it,Scarlet & Violet,choice_without,10/159,sv09-010 swsh12.5-010,1.908
+bw7-122,it,Black & White,correct,122/149,bw7-122,0.862
+base4-45,en,Base,correct,45/130,base4-45,0.738
+sm3-89,en,Sun & Moon,correct,89/147,sm3-89,0.731
+dp7-66,en,Diamond & Pearl,correct,66/100,dp7-66,0.474
+pl3-66,en,Platinum,correct,66/147,pl3-66,1.578
+sm10-46,it,Sun & Moon,correct,46/214,sm10-46,0.706
+me02.5-130,it,Mega Evolution,correct,130/217,me02.5-130,0.652
+sv09-102,it,Scarlet & Violet,wrong,1/  9,bog-1,1.104
+sv07-050,en,Scarlet & Violet,correct,050/142,sv07-050,1.54
+bw3-56,it,Black & White,correct,56/101,bw3-56,0.647
+sv08.5-031,it,Scarlet & Violet,correct,031/131,sv08.5-031,0.595
+swsh12-147,it,Sword & Shield,correct,147/195,swsh12-147,0.517
+sv05-001,en,Scarlet & Violet,correct,001/162,sv05-001,1.946
+sv08-208,it,Scarlet & Violet,correct,208/191,sv08-208,0.473
+sv08-181,it,Scarlet & Violet,correct,181/191,sv08-181,0.45
+bw10-97,it,Black & White,correct,97/101,bw10-97,1.013
+sm11-187,en,Sun & Moon,correct,5187/236,sm11-187,0.76
+hgss1-29,en,HeartGold & SoulSilver,correct,29/123,hgss1-29,0.863
+swsh12-198,it,Sword & Shield,correct,F198/195,swsh12-198,0.322
+xy0-9,it,XY,correct,9/39,xy0-9,0.667
+xy4-47,en,XY,correct,47/119,xy4-47,0.405
+sm4-56,it,Sun & Moon,correct,56/111,sm4-56,1.05
+sv01-078,en,Scarlet & Violet,correct,078/198,sv01-078,2.132
+bw8-31,it,Black & White,correct,31/135,bw8-31,0.492
+dp7-85,en,Diamond & Pearl,correct,85/100,dp7-85,0.523
+30th-148,en,Mega Evolution,correct,148/128,30th-148,0.59
+sm11-167,it,Sun & Moon,correct,5167/236,sm11-167,0.677
+ex12-29,en,EX,correct,29/92,ex12-29,0.295
+base4-41,en,Base,correct,41/130,base4-41,1.325
+dp1-17,en,Diamond & Pearl,correct,17/130,dp1-17,0.652
+sm10-133,it,Sun & Moon,correct,133/214,sm10-133,0.844
+me03-011,it,Mega Evolution,correct,011/088,me03-011,0.447
+ecard1-18,en,E-Card,correct,18/165,ecard1-18,0.551
+lc-84,en,Legendary Collection,correct,84/110,lc-84,0.911
+sm11-158,it,Sun & Moon,correct,158/236,sm11-158,0.667
+sm12-143,it,Sun & Moon,unreadable,,,4.832
+basep-22,en,Base,unreadable,,,2.594
+xy9-20,en,XY,correct,20/122,xy9-20,0.652
+ex5-14,en,EX,correct,14/101,ex5-14,0.514
+swsh12-129,en,Sword & Shield,correct,129/195,swsh12-129,0.538
+bw1-30,it,Black & White,wrong,30/114,xy11-30,0.737
+sv08-071,it,Scarlet & Violet,correct,071/191,sv08-071,0.488
+sv10.5b-077,en,Scarlet & Violet,correct,077/086,sv10.5b-077,1.01
+sv07-105,en,Scarlet & Violet,correct,105/142,sv07-105,0.457
+sm3.5-74,it,Sun & Moon,correct,74/73,sm3.5-74,0.839
+pop5-7,en,POP,correct,7/17,pop5-7,0.342
+swsh9-139,it,Sword & Shield,correct,139/172,swsh9-139,0.428
+sv06.5-097,it,Scarlet & Violet,correct,097/064,sv06.5-097,0.558
+xy5-117,en,XY,correct,117/160,xy5-117,0.542
+swsh10-083,en,Sword & Shield,choice,F083/189,swsh10-083 swsh3-83,0.713
+sma-SV42,en,Sun & Moon,correct,SV42/SV94,sma-SV42,0.537
+sv02-153,en,Scarlet & Violet,correct,153/193,sv02-153,0.406
+sm4-38,it,Sun & Moon,correct,38/111,sm4-38,1.027
+sm12-119,en,Sun & Moon,correct,119/236,sm12-119,0.595
+sv10.5w-031,it,Scarlet & Violet,correct,031/086,sv10.5w-031,0.983
+me03-090,en,Mega Evolution,correct,090/088,me03-090,0.434
+sv09-100,en,Scarlet & Violet,correct,100/159,sv09-100,0.986
+sm11-227,it,Sun & Moon,correct,S227/236,sm11-227,0.699
+sv02-212,it,Scarlet & Violet,correct,212/193,sv02-212,0.635
+sm1-60,it,Sun & Moon,correct,60/149,sm1-60,0.806
+sm10-180,it,Sun & Moon,correct,180/214,sm10-180,0.716
+hgss3-14,en,HeartGold & SoulSilver,correct,14/90,hgss3-14,0.658
+sv02-037,it,Scarlet & Violet,correct,037/193,sv02-037,0.402
+base4-101,en,Base,correct,101/130,base4-101,0.525
+swsh2-26,it,Sword & Shield,correct,026/192,swsh2-26,0.385
+sv03.5-064,it,Scarlet & Violet,correct,064/165,sv03.5-064,0.863
+bw9-69,en,Black & White,correct,69/116,bw9-69,0.409
+sv10-092,en,Scarlet & Violet,correct,092/182,sv10-092,0.39
+swsh2-204,it,Sword & Shield,correct,0204/192,swsh2-204,0.5
+sm10-134,en,Sun & Moon,correct,134/214,sm10-134,0.759
+sv02-260,it,Scarlet & Violet,correct,260/193,sv02-260,0.414
+sm12-190,it,Sun & Moon,correct,190/236,sm12-190,0.745
+sv01-073,en,Scarlet & Violet,correct,073/198,sv01-073,1.343
+sm10-165,it,Sun & Moon,correct,165/214,sm10-165,0.836
+swsh11-194,en,Sword & Shield,correct,F194/196,swsh11-194,0.45
+bw9-4,it,Black & White,correct,4/116,bw9-4,0.376
+me04-073,en,Mega Evolution,correct,073/086,me04-073,1.079
+sma-SV85,en,Sun & Moon,correct,SV85/SV94,sma-SV85,0.397
+sm10-71,en,Sun & Moon,correct,71/214,sm10-71,0.634
+sm115-48,en,Sun & Moon,correct,48/68,sm115-48,0.532
+sv10.5b-167,it,Scarlet & Violet,correct,167/086,sv10.5b-167,0.801
+swsh7-106,it,Sword & Shield,correct,106/203,swsh7-106,0.439
+bw8-19,en,Black & White,correct,19/135,bw8-19,0.317
+sv08-196,it,Scarlet & Violet,correct,196/191,sv08-196,0.676
+sv04.5-175,it,Scarlet & Violet,correct,175/091,sv04.5-175,0.624
+pop8-7,en,POP,correct,7/17,pop8-7,0.692
+sm10-142,en,Sun & Moon,correct,142/214,sm10-142,0.813
+xy5-113,it,XY,correct,113/160,xy5-113,0.452
+me06-079,it,Mega Evolution,correct,079/103,me06-079,1.871
+sm9-41,en,Sun & Moon,correct,41/181,sm9-41,0.657
+sv04.5-107,it,Scarlet & Violet,correct,PAF107/091,sv04.5-107,0.426
+bw9-120,it,Black & White,correct,120/116,bw9-120,0.401
+sm5-120,it,Sun & Moon,correct,120/156,sm5-120,0.278
+swsh4-109,it,Sword & Shield,correct,0109/185,swsh4-109,0.678
+swsh6-7,it,Sword & Shield,correct,007/198,swsh6-7,1.5
+me02.5-018,en,Mega Evolution,correct,018/217,me02.5-018,0.503
+swsh4-133,it,Sword & Shield,correct,133/185,swsh4-133,0.697
+dp3-121,en,Diamond & Pearl,correct,121/132,dp3-121,0.422
+bw8-87,en,Black & White,correct,87/135,bw8-87,0.65
+hgss4-30,en,HeartGold & SoulSilver,correct,30/102,hgss4-30,1.064
+ecard1-155,en,E-Card,correct,155/165,ecard1-155,0.359
+sv10-213,it,Scarlet & Violet,correct,213/182,sv10-213,0.425
+pl2-86,en,Platinum,correct,86/111,pl2-86,0.704
+bw7-98,en,Black & White,correct,98/149,bw7-98,0.7
+me06-021,en,Mega Evolution,correct,021/103,me06-021,0.769
+swsh10.5-076,en,Sword & Shield,correct,F076/078,swsh10.5-076,0.384
+sv08-093,it,Scarlet & Violet,correct,093/191,sv08-093,0.479
+swsh11-025,en,Sword & Shield,correct,025/196,swsh11-025,0.463
+svp-173,en,Scarlet & Violet,unreadable,,,3.9
+swsh3-185,it,Sword & Shield,correct,185/189,swsh3-185,0.654
+me01-186,it,Mega Evolution,correct,MEG186/132,me01-186,0.38
+sv03-063,en,Scarlet & Violet,correct,063/197,sv03-063,1.419
+neo1-103,en,Neo,correct,103/111,neo1-103,0.493
+me06-122,it,Mega Evolution,correct,122/103,me06-122,0.568
+sv04.5-097,en,Scarlet & Violet,correct,097/091,sv04.5-097,3.172
+neo4-99,en,Neo,correct,99/105,neo4-99,0.353
+gym2-29,en,Gym,correct,29/132,gym2-29,1.032
+ex2-47,en,EX,correct,47/100,ex2-47,0.82
+swshp-SWSH224,en,Sword & Shield,correct,SWSH224,swshp-SWSH224,0.676
+swsh6-41,it,Sword & Shield,correct,041/198,swsh6-41,0.791
+dp3-59,en,Diamond & Pearl,correct,59/132,dp3-59,1.139
+base4-23,en,Base,unreadable,,,3.583
+xyp-XY122,en,XY,correct,XY122,xyp-XY122,0.463
+swsh3.5-21,en,Sword & Shield,correct,021/073,swsh3.5-21,0.874
+sv10.5b-098,it,Scarlet & Violet,correct,098/086,sv10.5b-098,0.503
+ecard2-54,en,E-Card,correct,54/147,ecard2-54,0.785
+sm4-23,it,Sun & Moon,correct,23/111,sm4-23,0.723
+xy11-81,en,XY,correct,81/114,xy11-81,0.513
+ex1-1,en,EX,correct,1/109,ex1-1,0.479
+bw7-130,it,Black & White,correct,130/149,bw7-130,0.654
+swsh6-6,it,Sword & Shield,correct,006/198,swsh6-6,0.932
+sv06-138,en,Scarlet & Violet,correct,138/167,sv06-138,2.208
+lc-59,en,Legendary Collection,correct,59/110,lc-59,0.925
+sv07-025,en,Scarlet & Violet,correct,025/142,sv07-025,0.523
+sv08.5-007,en,Scarlet & Violet,correct,PRE007/131,sv08.5-007,0.642
+xy5-49,it,XY,correct,49/160,xy5-49,1.166
+smp-SM53,en,Sun & Moon,correct,SM53,smp-SM53,0.497
+sma-SV40,en,Sun & Moon,correct,SV40/SV94,sma-SV40,0.959
+xy5-138,it,XY,correct,UEDA138/160,xy5-138,0.694
+sv07-079,en,Scarlet & Violet,correct,079/142,sv07-079,0.414
+xyp-XY51,en,XY,correct,XY51,xyp-XY51,0.685
+me02-057,it,Mega Evolution,correct,057/094,me02-057,0.504
+swsh7-180,it,Sword & Shield,correct,180/203,swsh7-180,0.478
+bw8-66,it,Black & White,correct,66/135,bw8-66,0.494
+sm7-78,en,Sun & Moon,correct,78/168,sm7-78,0.415
+sm2-105,en,Sun & Moon,correct,105/145,sm2-105,0.378
+swsh3-56,en,Sword & Shield,correct,056/189,swsh3-56,0.853
+swsh12.5-044,it,Sword & Shield,correct,WF044/159,swsh12.5-044,0.792
+sm12-18,it,Sun & Moon,correct,18/236,sm12-18,0.756
+me03-122,it,Mega Evolution,correct,122/088,me03-122,0.427
+sv07-037,en,Scarlet & Violet,correct,037/142,sv07-037,0.727
+svp-160,en,Scarlet & Violet,unreadable,,,4.027
+sv06-151,en,Scarlet & Violet,correct,151/167,sv06-151,0.346
+sm115-24,en,Sun & Moon,correct,24/68,sm115-24,0.748
+swsh4-76,it,Sword & Shield,correct,076/185,swsh4-76,0.51
+dp5-53,en,Diamond & Pearl,correct,53/100,dp5-53,0.588
+ex3-98,en,EX,unreadable,,,2.312
+swsh7-10,en,Sword & Shield,correct,010/203,swsh7-10,0.758
+gym1-36,en,Gym,correct,36/132,gym1-36,0.7
+sm7-48,it,Sun & Moon,correct,48/168,sm7-48,0.457
+pl4-18,en,Platinum,correct,18/99,pl4-18,0.779
+xy4-97,it,XY,correct,97/119,xy4-97,1.232
+sv03-134,en,Scarlet & Violet,correct,134/197,sv03-134,0.622
+me02.5-070,en,Mega Evolution,correct,070/217,me02.5-070,0.442
+col1-41,en,Call of Legends,correct,41/95,col1-41,1.115
+sm11-172,en,Sun & Moon,correct,5172/236,sm11-172,1.784
+swsh4-73,it,Sword & Shield,correct,073/185,swsh4-73,0.641
+gym1-118,en,Gym,correct,118/132,gym1-118,0.652
+xy9-74,it,XY,correct,74/122,xy9-74,0.362
+g1-16,en,XY,correct,16/83,g1-16,0.525
+xy6-104,en,XY,correct,104/108,xy6-104,0.674
+neo4-14,en,Neo,correct,14/105,neo4-14,0.548
+sm12-237,en,Sun & Moon,correct,237/236,sm12-237,0.638
+xy11-37,it,XY,correct,37/114,xy11-37,0.971
+swsh9-024,en,Sword & Shield,correct,024/172,swsh9-024,0.412
+xy4-7,en,XY,correct,7/119,xy4-7,0.693
+me06-030,en,Mega Evolution,correct,030/103,me06-030,0.468
+ex2-43,en,EX,correct,43/100,ex2-43,0.367
+swsh5-18,en,Sword & Shield,correct,018/163,swsh5-18,0.375
+pl4-24,en,Platinum,correct,24/99,pl4-24,0.532
+swsh10.5-058,en,Sword & Shield,correct,058/078,swsh10.5-058,0.598
+swsh10-044,it,Sword & Shield,correct,044/189,swsh10-044,0.92
+xy9-98,it,XY,correct,98/122,xy9-98,0.596
+sm11-206,it,Sun & Moon,correct,5206/236,sm11-206,0.721
+sv06-076,it,Scarlet & Violet,correct,076/167,sv06-076,2.79
+pop5-14,en,POP,correct,14/17,pop5-14,0.94
+sv10-035,it,Scarlet & Violet,correct,035/182,sv10-035,0.596

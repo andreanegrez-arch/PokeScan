@@ -1,15 +1,10 @@
-from typing import Annotated
-
-import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app import catalog
-from app.db import get_conn
+from app.db import DbConnection
 from app.schemas import CardDetail, Lang, PriceHistory, SearchResult, Variant
 
 router = APIRouter(prefix="/cards", tags=["cards"])
-
-Connection = Annotated[psycopg.Connection, Depends(get_conn)]
 
 NOT_FOUND = {404: {"description": "Card not found"}}
 
@@ -17,7 +12,7 @@ NOT_FOUND = {404: {"description": "Card not found"}}
 # Declared before /{card_id}, otherwise "search" would be read as a card id.
 @router.get("/search", response_model=SearchResult)
 def search_cards(
-    conn: Connection,
+    conn: DbConnection,
     q: str = Query(
         min_length=2,
         max_length=60,
@@ -38,7 +33,7 @@ def search_cards(
 
 
 @router.get("/{card_id}", response_model=CardDetail, responses=NOT_FOUND)
-def get_card(card_id: str, conn: Connection, lang: Lang = "it") -> CardDetail:
+def get_card(card_id: str, conn: DbConnection, lang: Lang = "it") -> CardDetail:
     """Card details with the latest Cardmarket prices."""
     card = catalog.card_detail(conn, card_id, lang)
     if card is None:
@@ -49,7 +44,7 @@ def get_card(card_id: str, conn: Connection, lang: Lang = "it") -> CardDetail:
 @router.get("/{card_id}/prices", response_model=PriceHistory, responses=NOT_FOUND)
 def get_price_history(
     card_id: str,
-    conn: Connection,
+    conn: DbConnection,
     variant: Variant = "normal",
     days: int = Query(default=90, ge=1, le=365),
 ) -> PriceHistory:

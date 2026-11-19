@@ -1,4 +1,5 @@
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import CONNECTION_HINT, create_pool
+from app.recognition import text
 from app.routers import cards, scan
 
 log = logging.getLogger("pokescan")
@@ -20,6 +22,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # is down, and requests that need it answer 503 until it is back.
     app.state.pool = create_pool()
     app.state.pool.open(wait=False)
+    # Load the OCR models in the background, so the first scan isn't slower.
+    threading.Thread(target=text.warm_up, daemon=True).start()
     try:
         yield
     finally:

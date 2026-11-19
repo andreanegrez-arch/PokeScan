@@ -15,19 +15,19 @@ export interface paths {
         put?: never;
         /**
          * Scan Card
-         * @description Identify a card from its printed code and estimate its condition.
+         * @description Identify a card from its printed code.
          *
          *     Identification never relies on the artwork alone, because the same
          *     artwork is often reprinted in several sets:
          *     1. find the card in the photo and straighten it (OpenCV);
          *     2. read the code at the bottom with OCR, e.g. 'SVI 025/198' or '136/189';
-         *     3. look it up by set code + number, or by number + official set size;
-         *     4. if several sets have that size, compare the printed set symbol
-         *        with the symbols of those sets;
+         *     3. look it up by number + official set size (or the promo number);
+         *     4. several sets share that size: keep the card whose set code is printed
+         *        next to the number, then the one whose name is printed at the top;
          *     5. still undecided: status 'ambiguous'. No code read: 'unreadable'.
          *
-         *     The optional back photo improves the condition estimate
-         *     (back centering, whitening on the edges).
+         *     The condition estimate is not available yet: `condition` is null. The
+         *     optional back photo will be used for it (back centering, edge whitening).
          */
         post: operations["scan_card_scan_post"];
         delete?: never;
@@ -457,14 +457,19 @@ export interface operations {
                     "application/json": components["schemas"]["ScanResult"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Photo larger than 20 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a JPEG, PNG or WebP image */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };

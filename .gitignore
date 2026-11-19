@@ -22,3 +22,6 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Downloaded files (e.g. card images for the scan evaluation)
+.cache/

@@ -7,25 +7,60 @@ A portfolio project that covers both **software development** (React + FastAPI
 web app, computer vision) and **data analysis** (daily price pipeline, SQL,
 analysis notebooks).
 
-> **Status:** the card catalog and the daily price history are collected, and
-> the search, card detail and price history endpoints work. The scan
-> (`/scan`) returns `501 Not Implemented` until recognition is built.
+> **Status:** the backend works end to end: the card catalog and the daily
+> price history are collected, and the scan, search, card detail and price
+> history endpoints work. Still to build: the condition estimate and the
+> frontend screens.
 
 ## How a scan works
 
 The same artwork is often reprinted in several sets, so PokeScan identifies a
 card from the **code printed at the bottom**, never from the artwork alone:
 
-1. Find the card in the photo and straighten it (OpenCV).
-2. Read the code with OCR: `SVI 025/198` on recent cards, `136/189` on older ones.
-3. Look it up by set code + number, or by number + official set size.
-4. If several sets have the same size, compare the printed set symbol.
+1. Find the card in the photo and straighten it (OpenCV: edges, the largest
+   four-sided shape with a card's proportions, perspective warp).
+2. Read the bottom strip with OCR (RapidOCR, on the CPU): `025/198` on most
+   cards, `SWSH020` on promos. Nothing found: the card may be upside down, so
+   read it again turned around.
+3. Look it up by number + official set size.
+4. Several sets have that size (e.g. 136/189 exists in *Darkness Ablaze* and
+   *Astral Radiance*): keep the card whose set code is printed next to the
+   number (`SVI` on recent cards), then the one whose name is printed at the
+   top.
 5. Still undecided: show the candidates and let the user choose.
    No code readable: ask for a better photo (or a manual search by code).
 
-With an optional photo of the back, PokeScan also estimates the condition:
-centering (front and back) and whitening on the edges. It is an indicative
-estimate on Cardmarket's scale, not a professional grade.
+### How well it works
+
+Measured with `python -m jobs.evaluate_scan` on 298 random catalog cards (all
+eras, English and Italian):
+
+| Outcome | Clean images | Synthetic photos |
+|---|---:|---:|
+| Right card identified | 96.6% | 95.6% |
+| Several candidates, the right one among them (the user picks) | 1.7% | 0.7% |
+| Wrong card identified | 0.7% | 0.7% |
+| Several candidates, the right one missing | 0.0% | 0.3% |
+| Code read, but no card has it | 0.3% | 0.0% |
+| No code read (asks for a better photo) | 0.7% | 2.7% |
+| Median time per scan (CPU only) | 0.76 s | 0.65 s |
+
+*Clean images* are TCGdex's scans of the cards. *Synthetic photos* put them on
+a random background with a tilt (sometimes sideways or upside down),
+perspective, uneven light, blur, noise and JPEG compression. Real photos also
+have glare, sleeves and fingers, so expect lower numbers until it is measured
+on real photos. Remaining errors: partly read codes (`1/ 9`), sets of the same
+size where the name doesn't settle it (e.g. the two halves of a Trainer Kit
+hold the same card), and Italian cards of sets TCGdex has no Italian names
+for. One row per card is in
+[`analysis/data/scan_evaluation.csv`](analysis/data/scan_evaluation.csv).
+
+### Condition
+
+Not built yet. With an optional photo of the back, PokeScan will also
+estimate the condition: centering (front and back) and whitening on the
+edges. It will be an indicative estimate on Cardmarket's scale, not a
+professional grade.
 
 ## Architecture
 
@@ -45,13 +80,13 @@ analysis/ (SQL + Jupyter) ──► PostgreSQL
 | Frontend    | React, TypeScript, Vite                      |
 | Backend     | Python, FastAPI, Pydantic                    |
 | Database    | PostgreSQL                                   |
-| Recognition | OpenCV, OCR (planned)                        |
+| Recognition | OpenCV, RapidOCR (PaddleOCR models, ONNX)    |
 | Analysis    | SQL, pandas, Jupyter                         |
 
 ## Project structure
 
 ```
-backend/    FastAPI app, catalog import, daily price job, tests
+backend/    FastAPI app, recognition, catalog import, daily price job, tests
 db/         PostgreSQL schema
 frontend/   React + TypeScript app
 analysis/   SQL queries and Jupyter notebooks
@@ -235,7 +270,9 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 - [x] Daily price snapshot job (Cardmarket price guide)
 - [x] Card catalog import from TCGdex
 - [x] Search and card detail endpoints
-- [ ] Card identification from the printed code (OCR + set symbol)
+- [x] Card identification from the printed code (OCR, set code, card name)
+- [ ] Settle the remaining ties by comparing the set symbol or the artwork
+- [ ] Measure recognition on real phone photos
 - [ ] Condition estimate: centering, edge whitening
 - [ ] Price history chart in the frontend
 - [ ] Analysis notebooks

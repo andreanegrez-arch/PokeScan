@@ -158,7 +158,8 @@ def _summaries(
 def search_by_code(
     conn: psycopg.Connection, code: CollectorCode, lang: Lang, limit: int
 ) -> list[CardSummary]:
-    results: dict[str, CardSummary] = {}
+    """Cards with this code. 'SVI025' is read as typed first (a promo number),
+    and only if no card has it, as set SVI + number 025."""
     for variant in code_variants(code):
         params = {
             "number": variant.number,
@@ -167,9 +168,9 @@ def search_by_code(
             "lang": lang,
             "limit": limit,
         }
-        for card in _summaries(conn, FIND_BY_CODE, params):
-            results.setdefault(card.card_id, card)
-    return list(results.values())[:limit]
+        if results := _summaries(conn, FIND_BY_CODE, params):
+            return results
+    return []
 
 
 def search_by_name(
@@ -194,6 +195,17 @@ def search(conn: psycopg.Connection, query: str, lang: Lang, limit: int) -> Sear
         if results:
             return SearchResult(code=code, results=results)
     return SearchResult(code=None, results=search_by_name(conn, query, lang, limit))
+
+
+def names_of(conn: psycopg.Connection, card_ids: list[str]) -> dict[str, list[str]]:
+    """Every name of each card (one per language)."""
+    rows = conn.execute(
+        "SELECT card_id, name FROM card_translations WHERE card_id = ANY(%s)", (card_ids,)
+    ).fetchall()
+    names: dict[str, list[str]] = {card_id: [] for card_id in card_ids}
+    for card_id, name in rows:
+        names[card_id].append(name)
+    return names
 
 
 def _variant_prices(row: dict[str, Any], suffix: str) -> VariantPrices | None:
