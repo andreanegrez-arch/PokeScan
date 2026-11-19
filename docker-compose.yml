@@ -1,0 +1,17 @@
+# Local PostgreSQL for development.
+# On first start it creates the tables from db/schema.sql.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: pokescan
+      POSTGRES_PASSWORD: pokescan
+      POSTGRES_DB: pokescan
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+volumes:
+  pgdata:
