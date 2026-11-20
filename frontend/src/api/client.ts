@@ -17,7 +17,8 @@ export type PricePoint = Schemas['PricePoint']
 export type Variant = PriceHistory['variant']
 export type Lang = 'it' | 'en'
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+// /api: forwarded to the backend by Vite (see vite.config.ts), from any device.
+const API_URL: string = import.meta.env.VITE_API_URL ?? '/api'
 
 export class ApiError extends Error {
   status: number

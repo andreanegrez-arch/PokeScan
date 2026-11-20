@@ -206,9 +206,21 @@ npm run dev
 ```
 
 Open <http://localhost:5173>, with the backend running. The app calls the API
-at `http://localhost:8000`; to use another address, copy `.env.example` to
-`.env.local` and change `VITE_API_URL`. Checks: `npm run build` (types and
-build) and `npm run lint`.
+at `/api`, and Vite forwards it to the backend at `http://localhost:8000`. To
+call an API somewhere else, copy `.env.example` to `.env.local` and set
+`VITE_API_URL`. Checks: `npm run build` (types and build) and `npm run lint`.
+
+**From a phone**, on the same Wi-Fi as the computer:
+
+1. Run `npm run dev:lan` instead of `npm run dev`. Vite prints a `Network`
+   address such as `http://192.168.1.7:5173`.
+2. Open that address on the phone.
+
+Only Vite is reachable from the network. The backend stays on localhost, behind
+Vite's forwarding, so it needs no CORS change. The page is plain http, which is
+enough for the phone's "Take photo" button, since it opens the camera app. The
+webcam window used on computers needs https or localhost. If the phone can't
+connect, check that Windows Firewall allows Node.js on the current network.
 
 The TypeScript API types in `frontend/src/api/schema.d.ts` are generated from
 the backend. After changing `backend/app/schemas.py`, start the backend and run
