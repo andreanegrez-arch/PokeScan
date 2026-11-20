@@ -10,12 +10,15 @@ const TOUCH = window.matchMedia('(pointer: coarse)').matches
 export function PhotoPicker({
   side,
   hint,
+  kind,
   photo,
   disabled,
   onChange,
 }: {
   side: string
   hint: string
+  /** Which side of the card: the empty box is drawn like it. */
+  kind: 'front' | 'back'
   photo: File | null
   disabled?: boolean
   onChange: (photo: File | null) => void
@@ -42,7 +45,7 @@ export function PhotoPicker({
   return (
     <div className="picker">
       <div
-        className={`drop${photo ? ' has-photo' : ''}${dragging ? ' dragging' : ''}`}
+        className={`drop ${kind}${photo ? ' has-photo' : ''}${dragging ? ' dragging' : ''}`}
         onDragOver={(event) => {
           event.preventDefault()
           setDragging(true)

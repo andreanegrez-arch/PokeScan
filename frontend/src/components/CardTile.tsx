@@ -14,12 +14,13 @@ export function CardTile({ card }: { card: CardSummary }) {
         ) : (
           <span className="no-image">{t.noImage}</span>
         )}
+        <span className="tile-shine" aria-hidden="true" />
       </span>
       <span className="tile-name">{card.name}</span>
       <span className="tile-set">
         {card.set_name} · {cardNumber(card)}
       </span>
-      <span className="tile-price">
+      <span className={`tile-price${card.price_eur == null ? ' none' : ''}`}>
         {card.price_eur != null ? formatEuro(t, card.price_eur) : t.noPrice}
       </span>
     </a>

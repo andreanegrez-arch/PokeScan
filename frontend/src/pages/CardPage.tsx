@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import {
   ApiError,
   getCard,
@@ -8,6 +9,7 @@ import {
   type VariantPrices,
 } from '../api/client'
 import { ConditionPanel } from '../components/ConditionPanel'
+import { HoloCard } from '../components/HoloCard'
 import { PriceChart } from '../components/PriceChart'
 import { cardNumber, errorMessage, formatDay, formatEuro } from '../format'
 import { useLang } from '../i18n'
@@ -56,7 +58,7 @@ export function CardPage({
   return (
     <article className={`page card-page${loading ? ' stale' : ''}`}>
       <div className="card-art">
-        {card.image_url && <img src={card.image_url} alt={card.name} />}
+        {card.image_url && <HoloCard src={card.image_url} alt={card.name} />}
       </div>
 
       <div className="card-info">
@@ -84,10 +86,20 @@ export function CardPage({
 
 function Facts({ card }: { card: CardDetail }) {
   const { t } = useLang()
-  const facts: [string, string | null][] = [
+  const types =
+    card.types.length > 0 ? (
+      <span className="types">
+        {card.types.map((type) => (
+          <span key={type} className={`type-chip type-${type.toLowerCase()}`}>
+            {t.typeNames[type] ?? type}
+          </span>
+        ))}
+      </span>
+    ) : null
+  const facts: [string, ReactNode][] = [
     [t.category, card.category && (t.categories[card.category] ?? card.category)],
     [t.hp, card.hp != null ? String(card.hp) : null],
-    [t.types, card.types.map((type) => t.typeNames[type] ?? type).join(', ') || null],
+    [t.types, types],
     [t.rarity, card.rarity],
     [t.illustrator, card.illustrator],
     [t.released, card.release_date && formatDay(t, card.release_date)],

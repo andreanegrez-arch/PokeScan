@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ConditionEstimate, Lang } from './api/client'
+import { Ball } from './components/Ball'
 import { Segmented } from './components/Segmented'
 import { LangContext, STRINGS, useLang } from './i18n'
 import { CardPage } from './pages/CardPage'
@@ -63,7 +64,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-inner">
           <a className="brand" href={paths.scan}>
-            <Logo />
+            <Ball className="logo" />
             PokeScan
           </a>
           <nav aria-label="PokeScan">
@@ -91,6 +92,7 @@ export default function App() {
       <main>{page}</main>
       <footer className="footer">
         <p>{t.credits}</p>
+        <p>{t.disclaimer}</p>
       </footer>
     </LangContext>
   )
@@ -110,14 +112,5 @@ function Missing() {
       <p>{t.pageNotFound}</p>
       <a href={paths.scan}>{t.goHome}</a>
     </section>
-  )
-}
-
-function Logo() {
-  return (
-    <svg className="logo" viewBox="0 0 32 32" aria-hidden="true">
-      <rect x="9" y="6" width="14" height="20" rx="2" className="logo-card" />
-      <path d="M3 9V3h6M23 3h6v6M29 23v6h-6M9 29H3v-6" className="logo-frame" />
-    </svg>
   )
 }

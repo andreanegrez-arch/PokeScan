@@ -10,6 +10,9 @@ const it = {
   navSearch: 'Cerca',
   language: 'Lingua',
   credits: 'Dati delle carte: TCGdex · Prezzi: listino Cardmarket, aggiornato ogni giorno',
+  disclaimer:
+    'Progetto indipendente, non affiliato a Nintendo, The Pokémon Company, Creatures o ' +
+    'GAME FREAK. Pokémon e i nomi dei personaggi sono marchi dei rispettivi proprietari.',
   loading: 'Caricamento…',
   error: (message: string) => `Errore: ${message}`,
   serverDown: 'Il server non risponde. Il backend è avviato?',
@@ -50,6 +53,14 @@ const it = {
     'Inquadra tutta la carta, su un piano scuro e opaco, con luce uniforme e senza riflessi.',
   scan: 'Scansiona',
   scanning: 'Scansione in corso…',
+  scanSteps: [
+    'Cerco la carta nella foto…',
+    'La raddrizzo…',
+    'Leggo il codice in basso…',
+    'Cerco nel catalogo…',
+    'Misuro i bordi…',
+  ],
+  caught: 'Trovata!',
   matched: 'Carta riconosciuta:',
   ambiguous: (code: string) => `Il codice ${code} corrisponde a più carte. Qual è la tua?`,
   unreadable:
@@ -151,6 +162,9 @@ const en: Strings = {
   navSearch: 'Search',
   language: 'Language',
   credits: 'Card data: TCGdex · Prices: Cardmarket price guide, updated daily',
+  disclaimer:
+    'An independent project, not affiliated with Nintendo, The Pokémon Company, Creatures ' +
+    'or GAME FREAK. Pokémon and character names are trademarks of their owners.',
   loading: 'Loading…',
   error: (message: string) => `Error: ${message}`,
   serverDown: 'The server is not answering. Is the backend running?',
@@ -189,6 +203,14 @@ const en: Strings = {
   photoTips: 'Fit the whole card, on a dark matte surface, with even light and no glare.',
   scan: 'Scan',
   scanning: 'Scanning…',
+  scanSteps: [
+    'Finding the card in the photo…',
+    'Straightening it…',
+    'Reading the code at the bottom…',
+    'Looking it up in the catalog…',
+    'Measuring the borders…',
+  ],
+  caught: 'Got it!',
   matched: 'Card recognized:',
   ambiguous: (code: string) => `Code ${code} fits several cards. Which one is yours?`,
   unreadable:
