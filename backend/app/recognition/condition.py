@@ -3,12 +3,17 @@
 Centering: the width of the printed border (yellow, silver or, on the back,
 dark blue) on each side. find_outline's corners are only roughly right, so
 first the card's four edges are found in a wide view around it and the
-corners are put where they meet. The card is then straightened from those
-corners with some background around it, and on each side the border is
-measured from the card's edge (where the color changes along most of the
-side) to where the border's color stops for good (text printed on the
-border, like the copyright line, is thinner). Borders that don't look like
-one printed border are discarded: see _looks_like_one_border.
+corners are put where they meet. Of the edges found on a side, the card's is
+the one alike to those on the other sides (see _card_edges): the background
+can have edges of its own near the card, like a keyboard. The card is then
+straightened from those corners with some background around it (added in
+the card's plane, so that a photo taken at an angle keeps it centered), and
+on each side the border is measured from the card's edge (where the color
+changes along most of the side) to where the border's color stops for good
+(text printed on the border, like the copyright line, is thinner); where a
+holo border's color drifts on one side, to the next edge there instead (see
+_border_ends). Borders that don't look like one printed border are
+discarded: see _looks_like_one_border.
 
 Whitening: the back's dark blue border turns white where the edges and
 corners are worn. Measured on a thin band just inside the card's edge,
@@ -19,7 +24,9 @@ indicative estimate, not a professional grade. Glare, or a white table
 showing through, can look like whitening.
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import cast
 
 import cv2
 import numpy as np
@@ -30,7 +37,7 @@ from app.schemas import Centering, Condition, ConditionEstimate, Lang
 SIDES = ("left", "right", "top", "bottom")
 
 # Views of the card used to find its edges, each straightened from the corners
-# found in the one before: background around the card (see detect.enlarge),
+# found in the one before: background around the card (see _grown),
 # how far from where it is expected an edge may be (share of the width), and
 # the slopes it may have.
 REFINING = [
@@ -55,6 +62,9 @@ BORDER_RANGE = (0.012, 0.1)
 # share of the width: text printed on the border (the copyright line) is
 # thinner, and the border's color comes back after it.
 PERSIST = 0.018
+# The border's end found by color and as an edge are the same within this
+# share of the width on a plain border (see _border_ends).
+AGREE = 0.006
 # The border is as wide on every side: off-center printing moves it, so
 # left + right and top + bottom stay the same. Further apart than this, an
 # inner edge was missed (e.g. a strip of text along the bottom).
@@ -99,6 +109,19 @@ class Edge:
     depth: float  # pixels from the image's side, at the middle of the card's side
     tilt: float  # change of depth per pixel along the side
     end: int  # last depth where the change still covers the side
+    outside: np.ndarray  # Lab color just before the change
+    inside: np.ndarray  # Lab color just past the change
+
+    @property
+    def lighter(self) -> int:
+        """1 if it's lighter inside the edge, -1 if darker; 0 if about as
+        light, or if the edge is mostly a change of hue: then lightness
+        depends on the light (a dark blue border on a black table)."""
+        change = float(self.inside[0] - self.outside[0])
+        hue_change = float(np.linalg.norm(self.inside[1:] - self.outside[1:]))
+        if abs(change) < max(EDGE_CHANGE, hue_change):
+            return 0
+        return 1 if change > 0 else -1
 
 
 def _lab(image: np.ndarray) -> np.ndarray:
@@ -155,22 +178,22 @@ def _coverage(
     return coverage.max(axis=0), tilts[coverage.argmax(axis=0)]
 
 
-def _first_edge(lines: Lines, tilts: np.ndarray, start: float, stop: float) -> Edge | None:
-    """The first edge from outside whose change starts between start and stop.
+def _edges(lines: Lines, tilts: np.ndarray, start: float, stop: float) -> Iterator[Edge]:
+    """The edges whose change starts between start and stop, from outside in.
 
     A change with the same color on both sides is a line printed on the
     border (text), not where it ends: it is skipped.
     """
     start, stop = max(0, int(start)), min(lines.changed.shape[1], int(stop))
     if start >= stop:
-        return None
+        return
     depths = np.arange(start, min(lines.changed.shape[1], stop + RUN))
     coverage, slopes = _coverage(lines.changed, lines.along, tilts, depths)
     first = 0
     while True:
         above = np.flatnonzero(coverage[first : stop - start] >= EDGE_COVERAGE)
         if not len(above):
-            return None
+            return
         first = end = first + int(above[0])
         while end + 1 < len(coverage) and coverage[end + 1] >= EDGE_COVERAGE:
             end += 1
@@ -181,8 +204,47 @@ def _first_edge(lines: Lines, tilts: np.ndarray, start: float, stop: float) -> E
         after = lines.color_at(start + end + STEP + 1, tilt)
         if np.linalg.norm(after - before) >= EDGE_CHANGE:
             strongest = first + np.flatnonzero(run >= run.max() - 0.05)
-            return Edge(start + float(strongest.mean()) + STEP / 2, tilt, start + end)
+            yield Edge(start + float(strongest.mean()) + STEP / 2, tilt, start + end, before, after)
         first = end + 1
+
+
+def _first_edge(lines: Lines, tilts: np.ndarray, start: float, stop: float) -> Edge | None:
+    """The first edge from outside whose change starts between start and stop."""
+    return next(_edges(lines, tilts, start, stop), None)
+
+
+def _alike(edge: Edge, other: Edge) -> bool:
+    """Edges between the same two things: the same hue inside (within
+    SAME_COLOR), and not lighter inside one and darker inside the other.
+
+    Lightness itself isn't compared: one side of the card may be in shadow,
+    and a silver border looks lighter or darker with the angle of the light.
+    """
+    same_hue = np.linalg.norm(edge.inside[1:] - other.inside[1:]) <= SAME_COLOR
+    return bool(same_hue and edge.lighter * other.lighter >= 0)
+
+
+def _card_edges(candidates: dict[str, list[Edge]]) -> dict[str, Edge]:
+    """On each side, the card's edge among the edges found, from outside in.
+
+    Things in the background can have edges outside the card's, like a
+    keyboard above it or a pattern below it. The card's edge, though, is
+    alike on all four sides (see _alike): from the table to the border. So
+    the edge alike to edges on the most sides is taken as a model (on ties,
+    the one whose alike edges are the furthest out), and on each side the
+    first edge alike to it is the card's. None alike on a side: the first
+    one from outside.
+    """
+    def first_alike(edges: list[Edge], model: Edge) -> int | None:
+        return next((i for i, e in enumerate(edges) if _alike(e, model)), None)
+
+    def support(model: Edge) -> tuple[int, int]:
+        found = [i for edges in candidates.values()
+                 if (i := first_alike(edges, model)) is not None]
+        return len(found), -sum(found)
+
+    model = max((edge for edges in candidates.values() for edge in edges), key=support)
+    return {side: edges[first_alike(edges, model) or 0] for side, edges in candidates.items()}
 
 
 def _side_size(side: str, shape: tuple[int, ...]) -> int:
@@ -207,13 +269,29 @@ def _line(side: str, edge: Edge, middle: float, shape: tuple[int, ...]) -> np.nd
     return np.cross([*a, 1.0], [*b, 1.0])
 
 
+def _grown(corners: np.ndarray, margin: float) -> np.ndarray:
+    """The outline grown `margin` times in the card's own plane.
+
+    Straightened, the card is then in the middle of the view with as much
+    background on every side. Grown in the photo instead (detect.enlarge),
+    a card photographed at an angle ends up off center: its far side, smaller
+    in the photo, gets less background than its near side.
+    """
+    width, height = detect.CARD_SIZE
+    dx, dy = (margin - 1) / 2 * (width - 1), (margin - 1) / 2 * (height - 1)
+    grown = np.array([[[-dx, -dy], [width - 1 + dx, -dy],
+                       [width - 1 + dx, height - 1 + dy], [-dx, height - 1 + dy]]], np.float32)
+    to_photo = np.linalg.inv(detect.straightening(np.asarray(corners, np.float32)))
+    return cv2.perspectiveTransform(grown, to_photo)[0]
+
+
 def _warp(image: np.ndarray, corners: np.ndarray, margin: float) -> tuple[np.ndarray, np.ndarray]:
     """The card straightened with `margin` around it, and the transform used.
 
     Outside the photo, its edge pixels are repeated: a black fill would make
     an edge of its own.
     """
-    matrix = detect.straightening(detect.enlarge(corners, margin))
+    matrix = detect.straightening(_grown(corners, margin))
     view = cv2.warpPerspective(image, matrix, detect.CARD_SIZE, borderMode=cv2.BORDER_REPLICATE)
     return view, matrix
 
@@ -224,14 +302,16 @@ def _refine(
     view, matrix = _warp(image, corners, margin)
     lab = _lab(view)
     window *= view.shape[1]
-    lines = {}
+    candidates, middles = {}, {}
     for side in SIDES:
         found = _lines(lab, side)
         expected = (1 - 1 / margin) / 2 * _side_size(side, view.shape)
-        edge = _first_edge(found, slopes, expected - window, expected + window)
-        if edge is None:
+        candidates[side] = list(_edges(found, slopes, expected - window, expected + window))
+        if not candidates[side]:
             return None
-        lines[side] = _line(side, edge, float(found.along.mean()), view.shape)
+        middles[side] = float(found.along.mean())
+    lines = {side: _line(side, edge, middles[side], view.shape)
+             for side, edge in _card_edges(candidates).items()}
 
     meeting = []
     for a, b in (("top", "left"), ("top", "right"), ("bottom", "right"), ("bottom", "left")):
@@ -275,11 +355,13 @@ def measure_borders(card: np.ndarray, margin: float | None) -> Borders | None:
     """The border on each side of a straightened card; None if one can't be found.
 
     `margin`: the card was straightened with this much background around it
-    (see detect.enlarge); None for a photo cropped to the card.
+    (see _grown); None for a photo cropped to the card.
     """
     lab = _lab(card)
     width = card.shape[1]
-    outer, inner = {}, {}
+    outer: dict[str, float] = {}
+    by_color: dict[str, float | None] = {}
+    by_edge: dict[str, float | None] = {}
     for side in SIDES:
         lines = _lines(lab, side)
         if margin:
@@ -293,13 +375,46 @@ def measure_borders(card: np.ndarray, margin: float | None) -> Borders | None:
             start, after = 0.0, 0
         low, high = BORDER_RANGE
         tilt = edge.tilt if margin else 0.0
-        border = _border_end(lines, start, tilt, max(after, start + low * width),
-                             start + high * width, round(PERSIST * width))
-        if border is None:
-            return None  # e.g. a full-art card, without a plain border
-        outer[side], inner[side] = start, border
-    borders = Borders(outer, inner)
-    return borders if _looks_like_one_border(lab, borders) else None
+        begin, stop = max(after, start + low * width), start + high * width
+        outer[side] = start
+        by_color[side] = _border_end(lines, start, tilt, begin, stop, round(PERSIST * width))
+        inner_edge = _first_edge(lines, FINE_TILTS, begin, stop)
+        by_edge[side] = None if inner_edge is None else inner_edge.depth
+    for inner in _border_ends(by_color, by_edge, AGREE * width):
+        borders = Borders(outer, inner)
+        if _looks_like_one_border(lab, borders):
+            return borders
+    return None  # e.g. a full-art card, without a plain border
+
+
+def _border_ends(
+    by_color: dict[str, float | None], by_edge: dict[str, float | None], agree: float
+) -> Iterator[dict[str, float]]:
+    """Where the border ends on each side, most likely first.
+
+    By color (see _border_end). Then, on a holo border, the color can drift
+    with the light and stray from the one near the card's edge before the
+    border ends: one side's end is taken where its colors change across an
+    edge instead. Only when the other three sides end at about the same place
+    either way (within `agree` pixels), a sign of a plain border; and only
+    one side: edges in the artwork of a full-art card can happen to add up.
+    The side tried first is the one whose edge is furthest past where its
+    color strayed.
+    """
+    def agrees(side: str) -> bool:
+        color, edge = by_color[side], by_edge[side]
+        return color is not None and edge is not None and abs(edge - color) <= agree
+
+    def gap(side: str) -> float:
+        color, edge = by_color[side], by_edge[side]
+        return np.inf if color is None or edge is None else edge - color
+
+    if all(depth is not None for depth in by_color.values()):
+        yield cast(dict[str, float], by_color)
+    drifted = [side for side in SIDES if by_edge[side] is not None
+               and all(agrees(other) for other in SIDES if other != side)]
+    for side in sorted(drifted, key=gap, reverse=True):
+        yield cast(dict[str, float], {**by_color, side: by_edge[side]})
 
 
 def _border_end(

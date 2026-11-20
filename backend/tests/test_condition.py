@@ -133,6 +133,68 @@ def test_text_printed_on_the_border_is_not_taken_for_its_end():
     assert condition.centering(measured[1]).top_pct == pytest.approx(50.0, abs=2.5)
 
 
+def holo_front(left: int, right: int, top: int, bottom: int) -> np.ndarray:
+    """A silver border around an orange card, the bottom one catching the
+    light like a holo border: its color drifts from silver at the card's edge
+    to violet where it ends."""
+    width, height = detect.CARD_SIZE
+    silver, violet = np.array([185, 185, 190]), np.array([215, 120, 175])  # BGR
+    card = np.full((height, width, 3), silver, np.uint8)
+    for depth in range(bottom):
+        t = depth / (bottom - 1)
+        card[height - 1 - depth, left : width - right] = silver * (1 - t) + violet * t
+    cv2.rectangle(card, (left, top), (width - 1 - right, height - 1 - bottom), (60, 140, 235), -1)
+    return _rounded(card)
+
+
+def at_an_angle(card: np.ndarray, far: float = 0.75, seed: int = 1) -> np.ndarray:
+    """A photo of the card from its bottom side, at an angle: the far, top
+    side `far` times as wide as the near one. On a black table, with a
+    keyboard-like gray bar just above the card."""
+    rng = np.random.default_rng(seed)
+    width, height = 1200, 1600
+    scene = np.full((height, width, 3), 22, np.float32)
+    near, top, bottom = 760.0, 380.0, 1380.0
+    scene[: int(top) - 35, 100:1100] = 95  # the keyboard's edge, 35 px above the card
+    corners = np.float32([[600 - near * far / 2, top], [600 + near * far / 2, top],
+                          [600 + near / 2, bottom], [600 - near / 2, bottom]])
+    card_h, card_w = card.shape[:2]
+    source = np.float32([[0, 0], [card_w, 0], [card_w, card_h], [0, card_h]])
+    matrix = cv2.getPerspectiveTransform(source, corners)
+    warped = cv2.warpPerspective(card[:, :, :3], matrix, (width, height)).astype(np.float32)
+    mask = cv2.warpPerspective(card[:, :, 3], matrix, (width, height)).astype(np.float32)
+    mask = mask[..., None] / 255
+    scene = scene * (1 - mask) + warped * mask + rng.normal(0, 2, scene.shape)
+    scene = cv2.GaussianBlur(scene, (0, 0), 1.0)
+    ok, jpeg = cv2.imencode(".jpg", np.clip(scene, 0, 255).astype(np.uint8),
+                            [cv2.IMWRITE_JPEG_QUALITY, 85])
+    assert ok
+    return detect.decode(jpeg.tobytes())
+
+
+def test_a_back_photographed_at_an_angle_below_a_keyboard_is_measured():
+    # The real photo behind this test: the keyboard's edge, outside the card's,
+    # was taken for the card's top, and the card was off center once
+    # straightened, as the margin around it was added in the photo.
+    measured = condition.card_and_borders(at_an_angle(drawn_back(30, 42, 36, 36)))
+
+    assert measured is not None
+    value = condition.centering(measured[1])
+    assert value.left_pct == pytest.approx(41.7, abs=2.5)  # 30 / 72
+    assert value.top_pct == pytest.approx(50.0, abs=2.5)
+
+
+def test_a_holo_border_drifting_in_color_is_measured_to_its_end():
+    # 24 px on the left, 36 on the right: 40%. On the real photo, a holo
+    # border went from silver to pink and blue along the bottom.
+    measured = condition.card_and_borders(photo(holo_front(24, 36, 30, 30), seed=2))
+
+    assert measured is not None
+    value = condition.centering(measured[1])
+    assert value.left_pct == pytest.approx(40.0, abs=2.5)
+    assert value.top_pct == pytest.approx(50.0, abs=2.5)
+
+
 # ---------------------------------------------------------------------------
 # Whitening and grade
 # ---------------------------------------------------------------------------

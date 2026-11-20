@@ -73,11 +73,16 @@ the edges, not bends, creases or scratches on the surface.
 - **Centering**, front and back: how wide the printed border is on each
   side, e.g. 55/45 left-right. The outline used for recognition is only
   roughly right, so the card's four edges are found first and the card is
-  straightened from where they meet. On each side the border runs from the
+  straightened from where they meet. Of the edges near each side, the card's
+  is the one alike on all four sides (from the table to the border, same hue
+  inside): the first real photo had a keyboard just above the card, whose
+  edge was taken for the card's. On each side the border runs from the
   card's edge to where its color stops for at least about 1 mm, so text
-  printed on the border (the copyright line) doesn't end it. A result is
-  dropped when it doesn't look like one printed border: left + right far
-  from top + bottom, or sides of different colors.
+  printed on the border (the copyright line) doesn't end it. Where a holo
+  border's color drifts with the light on one side, that side's border runs
+  to the next edge instead. A
+  result is dropped when it doesn't look like one printed border: left +
+  right far from top + bottom, or sides of different colors.
 - **Whitening**, on the back: its dark blue border turns white where the
   edges and corners are worn. PokeScan measures the share of white pixels in
   a 1 mm band along the edge, for each corner and side, and names the worn
@@ -100,14 +105,14 @@ the back on a **dark, plain surface**: on a light one the edge can't be told
 apart from whitening, and PokeScan says so instead of grading.
 
 How well the centering works, from the same evaluation (front only, on the
-255 cards identified that have a plain border):
+261 cards identified that have a plain border):
 
 | | Synthetic photos |
 |---|---:|
-| Centering measured | 90.6% |
+| Centering measured | 92.0% |
 | Error, median | 1.0 points |
 | Error, 90th percentile | 2.3 points |
-| Error over 5 points | 5 cards (2.2%) |
+| Error over 5 points | 5 cards (2.1%) |
 
 The error is the difference from the centering measured on the clean image,
 on the worse of left-right and top-bottom: 1 point is 51/49 instead of
