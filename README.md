@@ -115,8 +115,11 @@ card backs, so it still has to be measured on real ones.
 Three screens, in Italian or English. The language also picks the card names
 and the condition notes.
 
-- **Scan**: a photo of the front, and optionally of the back. A recognized card
-  opens straight away. When the code fits several cards, the app lists them to
+- **Scan**: a photo of the front, and optionally of the back, taken with the
+  camera or uploaded. On a computer, the webcam opens inside the page, with a
+  card-shaped frame and a check of the shot before using it. On a phone, the
+  button opens the camera app, which takes sharper photos than a video frame.
+  A recognized card opens straight away. When the code fits several cards, the app lists them to
   pick from. When the code can't be read, it offers the search.
 - **Search**: by name, or by the printed code (`SVI 025/198`). The query is in
   the URL, so a search can be bookmarked or shared.
