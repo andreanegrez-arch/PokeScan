@@ -26,13 +26,17 @@ TIMEOUT = 10.0
 SAFE_PATH = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*")
 
 
-def picture(image_url: str | None) -> np.ndarray | None:
+def picture(*image_urls: str | None) -> np.ndarray | None:
     """The card's picture, straightened like a photo of it (detect.CARD_SIZE).
 
-    `image_url`: a card's image as the API gives it (base URL + catalog.SMALL_IMAGE).
+    `image_urls`: a card's image and fallback image as the API gives them
+    (base URL + catalog.SMALL_IMAGE), the first that can be had.
     """
-    if not image_url:
-        return None
+    found = (_picture(url) for url in image_urls if url)
+    return next((image for image in found if image is not None), None)
+
+
+def _picture(image_url: str) -> np.ndarray | None:
     base = image_url.removesuffix(catalog.SMALL_IMAGE).removesuffix(catalog.LARGE_IMAGE)
     path = urlparse(base).path.strip("/")
     if not SAFE_PATH.fullmatch(path) or ".." in path.split("/"):

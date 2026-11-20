@@ -45,6 +45,13 @@ LEFT JOIN LATERAL (
     WHERE t.card_id = c.card_id AND t.image_url IS NOT NULL
     ORDER BY t.lang = %(lang)s DESC, t.lang = 'en' DESC LIMIT 1
 ) image ON true
+-- The English image when the one above is another language's (see
+-- image_fallback_url): TCGdex lists a few images it doesn't have.
+LEFT JOIN LATERAL (
+    SELECT t.image_url FROM card_translations t
+    WHERE t.card_id = c.card_id AND t.lang = 'en' AND t.image_url IS NOT NULL
+      AND t.image_url IS DISTINCT FROM image.image_url
+) fallback ON true
 -- Latest stored prices; only the changes are stored, so they are still valid.
 LEFT JOIN LATERAL (
     SELECT * FROM cardmarket_prices p WHERE p.id_product = c.cardmarket_id
@@ -54,7 +61,8 @@ LEFT JOIN LATERAL (
 
 CARD_DISPLAY_COLUMNS = """
     c.card_id, card_name.name, set_name.name AS set_name, s.abbreviation AS set_code,
-    c.local_number, s.official_count AS set_total, image.image_url
+    c.local_number, s.official_count AS set_total, image.image_url,
+    fallback.image_url AS image_fallback_url
 """
 
 # `found` lists the matching cards (card_id, rank), already limited.
@@ -144,15 +152,17 @@ def _image(base_url: str | None, size: str) -> str | None:
     return base_url + size if base_url else None
 
 
+def _images(row: dict[str, Any], size: str) -> dict[str, str | None]:
+    """The row's image and fallback image base URLs, as URLs of this size."""
+    return {key: _image(row[key], size) for key in ("image_url", "image_fallback_url")}
+
+
 def _summaries(
     conn: psycopg.Connection, found: str, params: dict[str, Any]
 ) -> list[CardSummary]:
     with conn.cursor(row_factory=dict_row) as cur:
         rows = cur.execute(SUMMARIES.format(found=found), params).fetchall()
-    return [
-        CardSummary(**{**row, "image_url": _image(row["image_url"], SMALL_IMAGE)})
-        for row in rows
-    ]
+    return [CardSummary(**{**row, **_images(row, SMALL_IMAGE)}) for row in rows]
 
 
 def search_by_code(
@@ -232,7 +242,7 @@ def card_detail(conn: psycopg.Connection, card_id: str, lang: Lang) -> CardDetai
     return CardDetail(
         **{
             **row,
-            "image_url": _image(row["image_url"], LARGE_IMAGE),
+            **_images(row, LARGE_IMAGE),
             "types": row["types"] or [],
             "variants": row["variants"] or [],
             "prices": prices,

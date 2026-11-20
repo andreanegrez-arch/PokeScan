@@ -29,8 +29,10 @@ export interface paths {
          *     When a card is found, or its code is read but no card in the catalog has
          *     it (status 'not_found'), `condition` holds the front's centering and, with
          *     the optional back photo, the back's centering, the whitening on its
-         *     edges and an indicative grade (null without the back). Photograph the
-         *     back on a dark, plain surface.
+         *     edges and an indicative grade (null without the back). For a card found
+         *     whose border's inner edge doesn't show on every side of the photo, that
+         *     edge is carried over from the card's catalog picture, aligned on its
+         *     artwork and text; the cut is always measured on the photo.
          */
         post: operations["scan_card_scan_post"];
         delete?: never;
@@ -175,6 +177,11 @@ export interface components {
              */
             image_url: string | null;
             /**
+             * Image Fallback Url
+             * @description The English image, when image_url is another language's: TCGdex lists a few images it doesn't have, so show this one if image_url fails to load
+             */
+            image_fallback_url?: string | null;
+            /**
              * Rarity
              * @example Uncommon
              */
@@ -273,6 +280,11 @@ export interface components {
              * @description Card image (WebP): small in search results, large in card details
              */
             image_url: string | null;
+            /**
+             * Image Fallback Url
+             * @description The English image, when image_url is another language's: TCGdex lists a few images it doesn't have, so show this one if image_url fails to load
+             */
+            image_fallback_url?: string | null;
             /**
              * Price Eur
              * @description Cardmarket trend price of the normal variant, in EUR

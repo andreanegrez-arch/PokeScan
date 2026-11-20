@@ -37,6 +37,11 @@ class CardBase(BaseModel):
     image_url: str | None = Field(
         description="Card image (WebP): small in search results, large in card details"
     )
+    image_fallback_url: str | None = Field(
+        default=None,
+        description="The English image, when image_url is another language's: TCGdex "
+        "lists a few images it doesn't have, so show this one if image_url fails to load",
+    )
 
 
 class CardSummary(CardBase):

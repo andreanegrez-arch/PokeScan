@@ -47,6 +47,7 @@ def test_search_by_set_code_and_number_returns_the_card_in_italian(client):
             "local_number": "136",
             "set_total": 189,
             "image_url": f"{IMAGES}/it/swsh3-136/low.webp",
+            "image_fallback_url": f"{IMAGES}/en/swsh3-136/low.webp",
             "price_eur": 0.12,
         }
     ]
@@ -114,6 +115,8 @@ def test_card_details_have_the_latest_prices_of_both_variants(client):
     card = client.get("/cards/swsh3-136").json()
 
     assert card["image_url"] == f"{IMAGES}/it/swsh3-136/high.webp"
+    # TCGdex lists a few images it doesn't have: the English one, if that fails.
+    assert card["image_fallback_url"] == f"{IMAGES}/en/swsh3-136/high.webp"
     assert (card["set_code"], card["set_total"], card["release_date"]) == (
         "DAA", 189, "2020-08-14"
     )

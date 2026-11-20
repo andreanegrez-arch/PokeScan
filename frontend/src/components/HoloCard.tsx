@@ -3,7 +3,7 @@ import { useRef, type PointerEvent } from 'react'
 const STILL = window.matchMedia('(prefers-reduced-motion: reduce)')
 
 /** The card's image, tilting toward the pointer with a holo glare on it. */
-export function HoloCard({ src, alt }: { src: string; alt: string }) {
+export function HoloCard({ src, alt, onError }: { src: string; alt: string; onError?: () => void }) {
   const card = useRef<HTMLDivElement>(null)
 
   function tilt(event: PointerEvent) {
@@ -28,7 +28,7 @@ export function HoloCard({ src, alt }: { src: string; alt: string }) {
 
   return (
     <div className="holo-card" ref={card} onPointerMove={tilt} onPointerLeave={reset}>
-      <img src={src} alt={alt} />
+      <img src={src} alt={alt} onError={onError} />
       <span className="holo-glare" aria-hidden="true" />
     </div>
   )

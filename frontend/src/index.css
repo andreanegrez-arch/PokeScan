@@ -1152,6 +1152,41 @@ dialog.camera::backdrop {
   opacity: 1;
 }
 
+/* A card without an image: its shape, so the page keeps its layout. */
+.card-placeholder {
+  max-width: 320px;
+  margin: 0 auto;
+  aspect-ratio: 63 / 88;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  border: 2px dashed var(--border);
+  border-radius: 4.5% / 3.2%;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.card-placeholder strong {
+  font-family: var(--display);
+  font-size: 18px;
+  color: var(--text);
+}
+
+.card-placeholder span {
+  font-size: 14px;
+}
+
+.placeholder-ball {
+  width: 56px;
+  height: 56px;
+  opacity: 0.5;
+  filter: grayscale(1);
+}
+
 @media (min-width: 760px) {
   .card-page {
     grid-template-columns: 320px 1fr;
@@ -1418,7 +1453,8 @@ dialog.camera::backdrop {
     height: 64px;
   }
 
-  .holo-card {
+  .holo-card,
+  .card-placeholder {
     max-width: 240px;
   }
 }

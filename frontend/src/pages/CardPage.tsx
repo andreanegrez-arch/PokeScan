@@ -8,6 +8,7 @@ import {
   type Variant,
   type VariantPrices,
 } from '../api/client'
+import { Ball } from '../components/Ball'
 import { ConditionPanel } from '../components/ConditionPanel'
 import { HoloCard } from '../components/HoloCard'
 import { PriceChart } from '../components/PriceChart'
@@ -15,6 +16,7 @@ import { cardNumber, errorMessage, formatDay, formatEuro } from '../format'
 import { useLang } from '../i18n'
 import { paths, useTitle } from '../router'
 import { useApi } from '../useApi'
+import { useImageFallback } from '../useImageFallback'
 
 const VARIANTS: Variant[] = ['normal', 'reverse']
 
@@ -58,7 +60,7 @@ export function CardPage({
   return (
     <article className={`page card-page${loading ? ' stale' : ''}`}>
       <div className="card-art">
-        {card.image_url && <HoloCard src={card.image_url} alt={card.name} />}
+        <CardArt key={card.card_id} card={card} />
       </div>
 
       <div className="card-info">
@@ -81,6 +83,20 @@ export function CardPage({
         </section>
       )}
     </article>
+  )
+}
+
+/** The card's image or, when TCGdex has none (or lists one it doesn't have), a card-shaped placeholder. */
+function CardArt({ card }: { card: CardDetail }) {
+  const { t } = useLang()
+  const image = useImageFallback(card.image_url, card.image_fallback_url)
+  if (image.src) return <HoloCard src={image.src} alt={card.name} onError={image.onError} />
+  return (
+    <div className="card-placeholder" role="img" aria-label={t.noImage}>
+      <Ball className="placeholder-ball" />
+      <strong>{t.noImage}</strong>
+      <span>{t.noImageNote}</span>
+    </div>
   )
 }
 

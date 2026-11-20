@@ -160,7 +160,8 @@ def identify(
             code, candidates, confirmed = _narrow(conn, read, candidates, reading, name_lines)
             if read in reading.guesses and not confirmed:
                 continue
-            picture = (partial(reference.picture, candidates[0].image_url)
+            card = candidates[0]
+            picture = (partial(reference.picture, card.image_url, card.image_fallback_url)
                        if pictures and len(candidates) == 1 else None)
             estimate = condition.assess(image, turned, back, lang, picture)
             if len(candidates) == 1:

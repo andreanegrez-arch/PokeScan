@@ -2,15 +2,17 @@ import type { CardSummary } from '../api/client'
 import { cardNumber, formatEuro } from '../format'
 import { useLang } from '../i18n'
 import { paths } from '../router'
+import { useImageFallback } from '../useImageFallback'
 
 /** A card in a list: image, name, set and price, linking to its details. */
 export function CardTile({ card }: { card: CardSummary }) {
   const { t } = useLang()
+  const image = useImageFallback(card.image_url, card.image_fallback_url)
   return (
     <a className="tile" href={paths.card(card.card_id)}>
       <span className="tile-image">
-        {card.image_url ? (
-          <img src={card.image_url} alt="" loading="lazy" />
+        {image.src ? (
+          <img src={image.src} alt="" loading="lazy" onError={image.onError} />
         ) : (
           <span className="no-image">{t.noImage}</span>
         )}

@@ -43,6 +43,24 @@ def test_no_picture_without_a_safe_url(downloads, url):
     assert downloads == []
 
 
+def test_the_fallback_picture_is_used_when_the_first_is_missing(monkeypatch, tmp_path):
+    # TCGdex lists some Italian images it doesn't have (404).
+    monkeypatch.setattr(reference, "CACHE", tmp_path)
+    ok, png = cv2.imencode(".png", np.full((825, 600, 3), 200, np.uint8))
+    assert ok
+
+    def get(url, **_):
+        found = "/en/" in url
+        return httpx.Response(200 if found else 404, content=png.tobytes() if found else b"",
+                              request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(reference.httpx, "get", get)
+    english = URL.replace("/it/", "/en/")
+
+    assert reference.picture(f"{URL}/low.webp", f"{english}/low.webp") is not None
+    assert (tmp_path / "en/me/me02/072.png").exists()
+
+
 def test_a_failed_download_gives_no_picture(monkeypatch, tmp_path):
     monkeypatch.setattr(reference, "CACHE", tmp_path)
 

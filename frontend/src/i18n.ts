@@ -81,6 +81,7 @@ const it = {
   noResults: 'Nessuna carta trovata.',
   noPrice: 'Prezzo n.d.',
   noImage: 'Immagine non disponibile',
+  noImageNote: 'TCGdex, da cui arriva il catalogo, non ha ancora l’immagine di questa carta.',
 
   number: 'n.',
   rarity: 'Rarità',
@@ -233,6 +234,7 @@ const en: Strings = {
   noResults: 'No cards found.',
   noPrice: 'No price',
   noImage: 'No image yet',
+  noImageNote: 'TCGdex, where the catalog comes from, has no image of this card yet.',
 
   number: 'no.',
   rarity: 'Rarity',
