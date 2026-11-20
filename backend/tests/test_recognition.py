@@ -233,6 +233,9 @@ def test_a_code_no_card_has_is_not_found(catalog):
 
     assert result.status == "not_found"
     assert (result.code.number, result.code.total) == ("999", "999")
+    # Not in the catalog, but the condition can be measured all the same.
+    assert result.condition is not None
+    assert result.condition.front_centering is not None
 
 
 def test_a_photo_without_code_is_unreadable(catalog):
@@ -240,6 +243,7 @@ def test_a_photo_without_code_is_unreadable(catalog):
 
     assert result.status == "unreadable"
     assert result.code is None
+    assert result.condition is None
 
 
 # ---------------------------------------------------------------------------

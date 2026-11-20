@@ -118,7 +118,9 @@ class ScanResult(BaseModel):
     candidates: list[CardSummary] = Field(
         description="Cards sharing the code, when status is ambiguous"
     )
-    condition: ConditionEstimate | None
+    condition: ConditionEstimate | None = Field(
+        description="Set when status is matched, ambiguous or not_found"
+    )
 
 
 # ---------------------------------------------------------------------------

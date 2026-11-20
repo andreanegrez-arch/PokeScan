@@ -12,8 +12,10 @@
    '1/5') is kept only if one of the two agrees: else it's just a misreading
    that happens to be some card's code.
 5. Still more than one: 'ambiguous', and the user picks.
-6. A card was found: estimate its condition from the same photo and, if
-   given, a photo of the back (see condition.py).
+6. A card was found, or a code was read that no card in the catalog has (a
+   Japanese or Chinese card, say): estimate its condition from the same photo
+   and, if given, a photo of the back (see condition.py). Nothing read: the
+   photo is too poor to measure anything, and no estimate.
 """
 
 from collections.abc import Callable
@@ -138,7 +140,8 @@ def identify(
     conn: psycopg.Connection, image: np.ndarray, lang: Lang, back: np.ndarray | None = None
 ) -> ScanResult:
     """Identify the card in a photo (see detect.decode) and estimate its condition."""
-    first_code: CollectorCode | None = None  # read, but no card has it
+    # A code read, but no card has it, and which way up the card was then.
+    first: tuple[CollectorCode, bool] | None = None
     for view, code_region, name_region, turned in _views(image):
         lines = text.read_lines(code_region(view))
         reading = text.read_code(lines)
@@ -154,6 +157,11 @@ def identify(
             if len(candidates) == 1:
                 return _result("matched", code, match=candidates[0], condition=estimate)
             return _result("ambiguous", code, candidates=candidates, condition=estimate)
-        if reading.codes:
-            first_code = first_code or reading.codes[0]  # try the other views
-    return _result("not_found", first_code) if first_code else _result("unreadable")
+        if reading.codes and first is None:
+            first = reading.codes[0], turned  # try the other views
+    if first is None:
+        return _result("unreadable")
+    # The card isn't in the catalog (a Chinese one, say), but the photo is
+    # still good enough to read its code: measure its condition all the same.
+    code, turned = first
+    return _result("not_found", code, condition=condition.assess(image, turned, back, lang))

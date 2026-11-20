@@ -34,6 +34,9 @@ card from the **code printed at the bottom**, never from the artwork alone:
 5. Still undecided: show the candidates and let the user choose.
    No code readable: ask for a better photo (or a manual search by code).
 6. A card was found: estimate its condition (see [Condition](#condition)).
+   The same when the code is read but no card has it (a Japanese or Chinese
+   card, say): the card isn't in the catalog, yet its condition can be
+   measured all the same.
 
 ### How well it works
 

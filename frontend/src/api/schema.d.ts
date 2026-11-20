@@ -26,7 +26,8 @@ export interface paths {
          *        next to the number, then the one whose name is printed at the top;
          *     5. still undecided: status 'ambiguous'. No code read: 'unreadable'.
          *
-         *     When a card is found, `condition` holds the front's centering and, with
+         *     When a card is found, or its code is read but no card in the catalog has
+         *     it (status 'not_found'), `condition` holds the front's centering and, with
          *     the optional back photo, the back's centering, the whitening on its
          *     edges and an indicative grade (null without the back). Photograph the
          *     back on a dark, plain surface.
@@ -390,6 +391,7 @@ export interface components {
              * @description Cards sharing the code, when status is ambiguous
              */
             candidates: components["schemas"]["CardSummary"][];
+            /** @description Set when status is matched, ambiguous or not_found */
             condition: components["schemas"]["ConditionEstimate"] | null;
         };
         /** SearchResult */
