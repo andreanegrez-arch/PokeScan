@@ -84,6 +84,18 @@ class Centering(BaseModel):
         description="Top border as % of top + bottom borders (50 = perfect)",
         examples=[48.0],
     )
+    left_minus_right_mm: float | None = Field(
+        default=None,
+        description="How much wider the left border is than the right, in mm "
+        "(negative: the right is wider); unknown when the card's size in the photo is",
+        examples=[0.32],
+    )
+    top_minus_bottom_mm: float | None = Field(
+        default=None,
+        description="How much wider the top border is than the bottom, in mm "
+        "(negative: the bottom is wider)",
+        examples=[-0.1],
+    )
 
 
 class ConditionEstimate(BaseModel):

@@ -82,7 +82,25 @@ the edges, not bends, creases or scratches on the surface.
   border's color drifts with the light on one side, that side's border runs
   to the next edge instead. A
   result is dropped when it doesn't look like one printed border: left +
-  right far from top + bottom, or sides of different colors.
+  right far from top + bottom, or sides of different colors. Besides the
+  ratio, PokeScan says by how much one border is wider, in mm (e.g. right
+  border 0.6 mm wider).
+- **Border ends that don't show**: on a silver card with a silver frame (the
+  Metal type in the Scarlet & Violet and Mega Evolution eras) the light can
+  make the frame look just like the border on one side, with no line to
+  measure. For a card found in the catalog, PokeScan then aligns the photo
+  with TCGdex's picture of the card, on points of its artwork and text
+  (SIFT), and carries the border's end over from the picture. Off-center
+  printing moves the whole print, so the picture shows where that line is
+  printed on this very card. The picture's own cut is never used, as it
+  isn't always centered either (recent sets have digital pictures, a pixel
+  or two off; older ones, scans of real cards): the cut is measured on the
+  photo. The line carried over must match the photo within 0.15 mm on the
+  sides where it shows, one across and one down; else no centering.
+- **The back's edge on a black table**: in dim light, the dark blue border's
+  edge can be too faint and blurred to find. It is looked for again over a
+  wider span, keeping only edges with the back's blue inside (the first real
+  photo had the frame around the artwork taken for the card's edge).
 - **Whitening**, on the back: its dark blue border turns white where the
   edges and corners are worn. PokeScan measures the share of white pixels in
   a 1 mm band along the edge, for each corner and side, and names the worn
@@ -101,11 +119,14 @@ the edges, not bends, creases or scratches on the surface.
 | Poor | | | | more |
 
 Without the back photo, `/scan` gives the front's centering only. Photograph
-the back on a **dark, plain surface**: on a light one the edge can't be told
-apart from whitening, and PokeScan says so instead of grading.
+the back on a **dark, plain, matte surface, with good light**: on a light
+one the edge can't be told apart from whitening, and PokeScan says so
+instead of grading; on a black one in dim light its dark blue barely shows.
 
 How well the centering works, from the same evaluation (front only, on the
-261 cards identified that have a plain border):
+261 cards identified that have a plain border). The photo alone: the
+synthetic photos are made from TCGdex's pictures, which would align with
+themselves perfectly.
 
 | | Synthetic photos |
 |---|---:|

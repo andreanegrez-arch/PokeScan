@@ -184,6 +184,106 @@ def test_a_back_photographed_at_an_angle_below_a_keyboard_is_measured():
     assert value.top_pct == pytest.approx(50.0, abs=2.5)
 
 
+def test_centering_tells_how_much_wider_a_border_is_in_mm():
+    # 26 px on the left, 46 on the right, of a card 750 px for 63 mm.
+    measured = condition.card_and_borders(photo(drawn_front(26, 46, 36, 36)))
+
+    assert measured is not None
+    value = condition.centering(measured[1])
+    assert value.left_minus_right_mm == pytest.approx(-20 * 63 / 750, abs=0.2)
+    assert value.top_minus_bottom_mm == pytest.approx(0, abs=0.2)
+    turned = condition.centering(measured[1], upside_down=True)
+    assert turned.left_minus_right_mm == -value.left_minus_right_mm
+
+
+SILVER = (190, 190, 192)
+FRAME = (150, 150, 152)
+SHEET_PAD = 40  # print around the card, where it can be cut
+
+
+def printed_sheet(border: int = 36, seed: int = 5) -> np.ndarray:
+    """The print of a silver card, bigger than the card so that it can be cut
+    off center: a silver border `border` px wide around a gray frame, with
+    artwork and text."""
+    width, height = detect.CARD_SIZE
+    pad = SHEET_PAD
+    sheet = np.full((height + 2 * pad, width + 2 * pad, 3), SILVER, np.uint8)
+    x0, y0 = pad + border, pad + border
+    x1, y1 = pad + width - 1 - border, pad + height - 1 - border
+    cv2.rectangle(sheet, (x0, y0), (x1, y1), FRAME, -1)
+    art = (x0 + 30, y0 + 90, x1 - 30, y0 + 560)
+    cv2.rectangle(sheet, art[:2], art[2:], (120, 90, 60), -1)
+    rng = np.random.default_rng(seed)
+    for _ in range(160):
+        color = tuple(int(v) for v in rng.integers(0, 255, 3))
+        x, y = int(rng.integers(art[0], art[2])), int(rng.integers(art[1], art[3]))
+        if rng.random() < 0.5:
+            cv2.circle(sheet, (x, y), int(rng.integers(4, 30)), color, -1)
+        else:
+            cv2.rectangle(sheet, (x, y), (x + int(rng.integers(5, 40)),
+                                          y + int(rng.integers(5, 40))), color, -1)
+    for i, words in enumerate(["Testmon", "Quick Draw 30", "Flash Spark 90x",
+                               "weakness resistance retreat"]):
+        cv2.putText(sheet, words, (x0 + 25, y0 + 60 if i == 0 else y0 + 600 + 70 * i),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.1 if i < 3 else 0.7, (30, 30, 30), 2, cv2.LINE_AA)
+    return sheet
+
+
+def cut(sheet: np.ndarray, right: int = 0) -> np.ndarray:
+    """The card cut from the sheet, `right` px right of center."""
+    width, height = detect.CARD_SIZE
+    return sheet[SHEET_PAD : SHEET_PAD + height, SHEET_PAD + right : SHEET_PAD + right + width]
+
+
+def silver_on_silver(card: np.ndarray, right_border: int) -> np.ndarray:
+    """The card lit so that the frame looks as light as the border on its
+    right side: there, the border's end doesn't show."""
+    card = card.copy()
+    width, height = detect.CARD_SIZE
+    strip = card[right_border : height - right_border,
+                 width - right_border - 60 : width - right_border]
+    strip[np.all(strip == FRAME, axis=2)] = SILVER
+    return _rounded(card)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_a_border_end_that_doesnt_show_is_carried_over_from_the_catalog(seed):
+    # The real photo behind this test: a silver Metal card, its frame as light
+    # as the border on one side. Cut 10 px right of center: 26 px left, 46
+    # right. The catalog's picture is cut elsewhere (centered): it doesn't matter.
+    sheet = printed_sheet()
+    front = photo(silver_on_silver(cut(sheet, right=10), right_border=46), seed)
+
+    assert condition.card_and_borders(front) is None
+    borders = condition.borders_by_reference(front, cut(sheet))
+    assert borders is not None
+    value = condition.centering(borders)
+    assert value.left_pct == pytest.approx(36.1, abs=2.5)  # 26 / 72
+    assert value.top_pct == pytest.approx(50.0, abs=2.5)
+    assert value.left_minus_right_mm == pytest.approx(-20 * 63 / 750, abs=0.2)
+
+
+def test_a_catalog_picture_of_another_print_is_not_used():
+    # Same artwork and text, but its border ends 10 px further in: where the
+    # photo shows the border's end, the picture's doesn't match.
+    front = photo(silver_on_silver(cut(printed_sheet(), right=10), right_border=46))
+
+    assert condition.borders_by_reference(front, cut(printed_sheet(border=46))) is None
+
+
+def test_the_catalog_picture_is_asked_for_only_when_needed():
+    asked = []
+
+    def picture():
+        asked.append(True)
+        return None
+
+    result = condition.assess(photo(drawn_front(36, 36, 36, 36)), False, None, "en", picture)
+
+    assert result.front_centering is not None
+    assert not asked
+
+
 def test_a_holo_border_drifting_in_color_is_measured_to_its_end():
     # 24 px on the left, 36 on the right: 40%. On the real photo, a holo
     # border went from silver to pink and blue along the bottom.
@@ -232,6 +332,25 @@ def test_without_the_back_only_the_front_centering_is_given():
     assert result.estimate is None
     assert result.edge_whitening_pct is None
     assert any(note.startswith("Add a photo of the back") for note in result.notes)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_a_dark_blue_back_on_a_black_table_in_dim_light_is_measured(seed):
+    # The real photo behind this test: the back's edge on a black laptop was
+    # too faint for the usual search, and the frame around the artwork was
+    # taken for the card's edge. 30 px left, 42 right.
+    back = drawn_back(30, 42, 36, 36)
+    colors = back[..., :3]
+    colors[np.all(colors == BACK_BLUE, axis=2)] = (75, 38, 22)  # darker in dim light
+    dim = cv2.GaussianBlur(photo(back, seed, background=(18, 18, 18)), (0, 0), 4.0)
+
+    assert condition.card_and_borders(dim) is None
+    result = condition.assess(photo(drawn_front(36, 36, 36, 36)), False, dim, "it")
+
+    assert result.back_centering is not None
+    assert result.back_centering.left_pct == pytest.approx(41.7, abs=2.5)
+    assert result.back_centering.top_pct == pytest.approx(50.0, abs=2.5)
+    assert result.edge_whitening_pct == pytest.approx(0, abs=0.3)
 
 
 def test_a_back_on_a_white_table_is_not_graded():

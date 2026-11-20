@@ -150,6 +150,8 @@ const it = {
   backCentering: 'Centratura retro',
   leftRight: 'sinistra-destra',
   topBottom: 'alto-basso',
+  borderSides: { left: 'sinistro', right: 'destro', top: 'superiore', bottom: 'inferiore' },
+  widerBy: (side: string, mm: string) => `bordo ${side} più largo di ${mm} mm`,
   whitening: 'Sbiancatura dei bordi (retro)',
 }
 
@@ -284,6 +286,8 @@ const en: Strings = {
   backCentering: 'Back centering',
   leftRight: 'left-right',
   topBottom: 'top-bottom',
+  borderSides: { left: 'left', right: 'right', top: 'top', bottom: 'bottom' },
+  widerBy: (side: string, mm: string) => `${side} border ${mm} mm wider`,
   whitening: 'Edge whitening (back)',
 }
 

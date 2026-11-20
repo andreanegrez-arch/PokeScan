@@ -23,6 +23,14 @@ export function formatEuro(t: Strings, value: number, decimals?: number) {
   }).format(value)
 }
 
+/** Millimeters to a tenth: what a photo can tell. */
+export function formatMm(t: Strings, value: number) {
+  return new Intl.NumberFormat(t.locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
 export function formatPercent(t: Strings, value: number) {
   return new Intl.NumberFormat(t.locale, { maximumFractionDigits: 1 }).format(value) + '%'
 }

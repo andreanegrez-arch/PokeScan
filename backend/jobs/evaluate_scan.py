@@ -217,7 +217,10 @@ def run(count: int, seed: int, clean: bool) -> int:
             photo_rng = np.random.default_rng([seed, zlib.crc32(card_id.encode())])
             photo = image if clean else make_photo(card, photo_rng)
             started = time.perf_counter()
-            result = identify(conn, decode(photo), lang)
+            # The photo is made from the catalog's own picture: aligned to it
+            # (see condition.borders_by_reference), it would match perfectly.
+            # Measured from the photo alone, as on a card unlike its picture.
+            result = identify(conn, decode(photo), lang, pictures=False)
             seconds = time.perf_counter() - started
             measured = result.condition.front_centering if result.condition else None
             rows.append({

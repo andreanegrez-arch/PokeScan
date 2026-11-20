@@ -293,6 +293,18 @@ export interface components {
              * @example 48
              */
             top_pct: number;
+            /**
+             * Left Minus Right Mm
+             * @description How much wider the left border is than the right, in mm (negative: the right is wider); unknown when the card's size in the photo is
+             * @example 0.32
+             */
+            left_minus_right_mm?: number | null;
+            /**
+             * Top Minus Bottom Mm
+             * @description How much wider the top border is than the bottom, in mm (negative: the bottom is wider)
+             * @example -0.1
+             */
+            top_minus_bottom_mm?: number | null;
         };
         /**
          * CollectorCode

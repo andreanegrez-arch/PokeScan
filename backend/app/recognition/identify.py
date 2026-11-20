@@ -14,18 +14,20 @@
 5. Still more than one: 'ambiguous', and the user picks.
 6. A card was found, or a code was read that no card in the catalog has (a
    Japanese or Chinese card, say): estimate its condition from the same photo
-   and, if given, a photo of the back (see condition.py). Nothing read: the
-   photo is too poor to measure anything, and no estimate.
+   and, if given, a photo of the back (see condition.py); for a card found,
+   with its catalog picture at hand where the photo doesn't show the
+   border's end all around (see reference.py). Nothing read: the photo is
+   too poor to measure anything, and no estimate.
 """
 
 from collections.abc import Callable
-from functools import cache
+from functools import cache, partial
 
 import numpy as np
 import psycopg
 
 from app import catalog
-from app.recognition import condition, detect, text
+from app.recognition import condition, detect, reference, text
 from app.schemas import CardSummary, CollectorCode, ConditionEstimate, Lang, ScanResult
 
 MAX_CANDIDATES = 20
@@ -137,9 +139,14 @@ def _result(
 
 
 def identify(
-    conn: psycopg.Connection, image: np.ndarray, lang: Lang, back: np.ndarray | None = None
+    conn: psycopg.Connection, image: np.ndarray, lang: Lang, back: np.ndarray | None = None,
+    pictures: bool = True,
 ) -> ScanResult:
-    """Identify the card in a photo (see detect.decode) and estimate its condition."""
+    """Identify the card in a photo (see detect.decode) and estimate its condition.
+
+    `pictures`: the catalog's picture of a card found may be used for its
+    centering (see reference.py).
+    """
     # A code read, but no card has it, and which way up the card was then.
     first: tuple[CollectorCode, bool] | None = None
     for view, code_region, name_region, turned in _views(image):
@@ -153,7 +160,9 @@ def identify(
             code, candidates, confirmed = _narrow(conn, read, candidates, reading, name_lines)
             if read in reading.guesses and not confirmed:
                 continue
-            estimate = condition.assess(image, turned, back, lang)
+            picture = (partial(reference.picture, candidates[0].image_url)
+                       if pictures and len(candidates) == 1 else None)
+            estimate = condition.assess(image, turned, back, lang, picture)
             if len(candidates) == 1:
                 return _result("matched", code, match=candidates[0], condition=estimate)
             return _result("ambiguous", code, candidates=candidates, condition=estimate)

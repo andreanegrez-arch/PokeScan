@@ -1,6 +1,8 @@
 import type { Centering, Condition, ConditionEstimate } from '../api/client'
-import { formatPercent } from '../format'
+import { formatMm, formatPercent } from '../format'
 import { CONDITION_NAMES, STRINGS, useLang } from '../i18n'
+
+type Side = 'left' | 'right' | 'top' | 'bottom'
 
 // The API's notes start with the centering, which is shown above them already.
 const CENTERING_LABELS = Object.values(STRINGS).flatMap((s) => [s.frontCentering, s.backCentering])
@@ -22,17 +24,26 @@ export function ConditionPanel({ condition }: { condition: ConditionEstimate }) 
   const notes = condition.notes.filter(
     (note) => !CENTERING_LABELS.some((label) => note.startsWith(label)),
   )
-  const centering = ({ left_pct, top_pct }: Centering) => {
-    const left = Math.round(left_pct)
-    const top = Math.round(top_pct)
+  // Which border is wider and by how much: from 0.1 mm, what a photo can tell.
+  const wider = (mm: number | null | undefined, first: Side, second: Side) =>
+    mm != null && Math.abs(mm) >= 0.05 ? (
+      <span className="offset">
+        {t.widerBy(t.borderSides[mm > 0 ? first : second], formatMm(t, Math.abs(mm)))}
+      </span>
+    ) : null
+  const centering = (value: Centering) => {
+    const left = Math.round(value.left_pct)
+    const top = Math.round(value.top_pct)
     return (
       <>
         <span>
           {left}/{100 - left} {t.leftRight}
         </span>
+        {wider(value.left_minus_right_mm, 'left', 'right')}
         <span>
           {top}/{100 - top} {t.topBottom}
         </span>
+        {wider(value.top_minus_bottom_mm, 'top', 'bottom')}
       </>
     )
   }

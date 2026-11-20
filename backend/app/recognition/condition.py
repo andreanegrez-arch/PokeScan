@@ -15,6 +15,12 @@ holo border's color drifts on one side, to the next edge there instead (see
 _border_ends). Borders that don't look like one printed border are
 discarded: see _looks_like_one_border.
 
+Where the border's inner edge doesn't show on every side (a silver border
+around a silver frame, lit so that the two look alike), it can be carried
+over from the catalog's picture of the card: see borders_by_reference. A
+dark blue back on a black table can have a card edge too faint for STEP:
+it is looked for again with the BACK search.
+
 Whitening: the back's dark blue border turns white where the edges and
 corners are worn. Measured on a thin band just inside the card's edge,
 following its rounded corners, for each corner and side.
@@ -24,7 +30,7 @@ indicative estimate, not a professional grade. Glare, or a white table
 showing through, can look like whitening.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import cast
 
@@ -73,7 +79,27 @@ SAME_TOTAL = 0.2
 # brightness (uneven light), much less in hue (a and b in Lab).
 SAME_COLOR = 40.0
 
+CARD_MM = (63.0, 88.0)  # width, height of a Pokémon card
 CORNER_RADIUS = 3 / 63  # Pokémon cards have 3 mm corners, 63 mm wide
+
+# A back's dark blue border on a black table, in dim light: its edge can be
+# a change too faint and blurred to show across STEP pixels. It is looked for
+# across SOFT_STEP pixels then, keeping only edges with the back's blue
+# inside: b of at most BLUE_B in OpenCV's Lab (128 is neutral, lower is bluer).
+SOFT_STEP = 6
+BLUE_B = 120
+
+# The catalog's picture of the card (see borders_by_reference). It is clean:
+# fainter changes are still lines (REFERENCE_CHANGE). The photo is aligned
+# to it on points found in both (SIFT, kept by Lowe's ALIGN_RATIO): at least
+# MIN_ALIGNED of them must agree on one perspective, within MAX_ALIGN_ERROR
+# px (median). The line carried over must lie where the photo shows it, on
+# the sides where it shows, within CARRIED_AGREE_MM.
+REFERENCE_CHANGE = 6.0
+ALIGN_RATIO = 0.75
+MIN_ALIGNED = 150
+MAX_ALIGN_ERROR = 0.8
+CARRIED_AGREE_MM = 0.15
 BAND = (2, 12)  # whitening band: pixels this far inside the card's edge (about 1 mm)
 BACKGROUND = (4, 10)  # background strip: pixels this far outside the card's edge
 
@@ -124,6 +150,29 @@ class Edge:
         return 1 if change > 0 else -1
 
 
+@dataclass(frozen=True)
+class Search:
+    """How edges are looked for: a change of color across `step` pixels of
+    at least `change` (Lab). `card_inside`, if given: whether a color (Lab)
+    can be the card's just inside its edge."""
+
+    step: int = STEP
+    change: float = EDGE_CHANGE
+    card_inside: Callable[[np.ndarray], bool] | None = None
+
+    def is_card_edge(self, edge: Edge) -> bool:
+        return self.card_inside is None or self.card_inside(edge.inside)
+
+
+def _back_blue(color: np.ndarray) -> bool:
+    return bool(color[2] <= BLUE_B)
+
+
+PLAIN = Search()
+BACK = Search(step=SOFT_STEP, card_inside=_back_blue)  # see SOFT_STEP
+REFERENCE = Search(change=REFERENCE_CHANGE)  # the catalog's clean picture
+
+
 def _lab(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(cv2.GaussianBlur(image, (5, 5), 0), cv2.COLOR_BGR2LAB)
 
@@ -133,8 +182,10 @@ class Lines:
     """Lines across one side of the image, outer end first, avoiding the corners."""
 
     colors: np.ndarray  # (lines, depth, 3), Lab
-    changed: np.ndarray  # (lines, depth - STEP): the color changes there
+    changed: np.ndarray  # (lines, depth - step): the color changes there
     along: np.ndarray  # each line's position along the side
+    step: int  # see Search
+    change: float
 
     def color_at(self, depth: float, tilt: float) -> np.ndarray:
         """Median color of the lines at this depth (at the middle of the side)."""
@@ -144,7 +195,7 @@ class Lines:
         return np.median(self.colors[np.arange(len(positions)), positions], axis=0)
 
 
-def _lines(lab: np.ndarray, side: str) -> Lines:
+def _lines(lab: np.ndarray, side: str, search: Search = PLAIN) -> Lines:
     height, width = lab.shape[:2]
     depth = int(0.25 * width)
     length = height if side in ("left", "right") else width
@@ -158,8 +209,9 @@ def _lines(lab: np.ndarray, side: str) -> Lines:
     else:
         lines = lab[height - depth :, along][::-1].transpose(1, 0, 2)
     lines = lines.astype(np.float32)
-    change = np.linalg.norm(lines[:, STEP:] - lines[:, :-STEP], axis=2)
-    return Lines(lines, change > EDGE_CHANGE, along)
+    step = search.step
+    change = np.linalg.norm(lines[:, step:] - lines[:, :-step], axis=2)
+    return Lines(lines, change > search.change, along, step, search.change)
 
 
 def _coverage(
@@ -201,16 +253,25 @@ def _edges(lines: Lines, tilts: np.ndarray, start: float, stop: float) -> Iterat
         peak = first + int(run.argmax())
         tilt = float(slopes[peak])
         before = lines.color_at(start + first - 1, tilt)
-        after = lines.color_at(start + end + STEP + 1, tilt)
-        if np.linalg.norm(after - before) >= EDGE_CHANGE:
+        after = lines.color_at(start + end + lines.step + 1, tilt)
+        if np.linalg.norm(after - before) >= lines.change:
             strongest = first + np.flatnonzero(run >= run.max() - 0.05)
-            yield Edge(start + float(strongest.mean()) + STEP / 2, tilt, start + end, before, after)
+            depth = start + float(strongest.mean()) + lines.step / 2
+            yield Edge(depth, tilt, start + end, before, after)
         first = end + 1
 
 
 def _first_edge(lines: Lines, tilts: np.ndarray, start: float, stop: float) -> Edge | None:
     """The first edge from outside whose change starts between start and stop."""
     return next(_edges(lines, tilts, start, stop), None)
+
+
+def _first_card_edge(
+    lines: Lines, search: Search, start: float, stop: float
+) -> Edge | None:
+    """The first edge between start and stop that can be the card's (see Search)."""
+    return next((e for e in _edges(lines, FINE_TILTS, start, stop) if search.is_card_edge(e)),
+                None)
 
 
 def _alike(edge: Edge, other: Edge) -> bool:
@@ -297,16 +358,19 @@ def _warp(image: np.ndarray, corners: np.ndarray, margin: float) -> tuple[np.nda
 
 
 def _refine(
-    image: np.ndarray, corners: np.ndarray, margin: float, window: float, slopes: np.ndarray
+    image: np.ndarray, corners: np.ndarray, margin: float, window: float, slopes: np.ndarray,
+    search: Search,
 ) -> np.ndarray | None:
     view, matrix = _warp(image, corners, margin)
     lab = _lab(view)
     window *= view.shape[1]
     candidates, middles = {}, {}
     for side in SIDES:
-        found = _lines(lab, side)
+        found = _lines(lab, side, search)
         expected = (1 - 1 / margin) / 2 * _side_size(side, view.shape)
-        candidates[side] = list(_edges(found, slopes, expected - window, expected + window))
+        candidates[side] = [edge for edge in _edges(found, slopes, expected - window,
+                                                     expected + window)
+                            if search.is_card_edge(edge)]
         if not candidates[side]:
             return None
         middles[side] = float(found.along.mean())
@@ -323,13 +387,15 @@ def _refine(
     return found[0]
 
 
-def refine_outline(image: np.ndarray, corners: np.ndarray) -> np.ndarray | None:
+def refine_outline(
+    image: np.ndarray, corners: np.ndarray, search: Search = PLAIN
+) -> np.ndarray | None:
     """The card's corners where its four edges meet: more exact than find_outline's.
 
     None if an edge can't be found (e.g. a background the color of the border).
     """
     for margin, window, slopes in REFINING:
-        corners = _refine(image, corners, margin, window, slopes)
+        corners = _refine(image, corners, margin, window, slopes, search)
         if corners is None:
             return None
     return corners
@@ -346,42 +412,81 @@ class Borders:
 
     outer: dict[str, float]  # the card's edge
     inner: dict[str, float]  # the printed border's inner edge
+    image_size: tuple[int, int] | None = None  # width, height of the image, if known
 
     def width(self, side: str) -> float:
         return self.inner[side] - self.outer[side]
 
+    def px_per_mm(self) -> tuple[float, float] | None:
+        """Pixels per mm across and down the card, from its size in the image."""
+        if self.image_size is None:
+            return None
+        width, height = self.image_size
+        across = width - self.outer["left"] - self.outer["right"]
+        down = height - self.outer["top"] - self.outer["bottom"]
+        return across / CARD_MM[0], down / CARD_MM[1]
 
-def measure_borders(card: np.ndarray, margin: float | None) -> Borders | None:
-    """The border on each side of a straightened card; None if one can't be found.
+
+@dataclass
+class Sides:
+    """What is found on each side of a straightened card: its edge, and where
+    its border ends by color and as the next edge (see _border_ends)."""
+
+    outer: dict[str, float]
+    by_color: dict[str, float | None]
+    by_edge: dict[str, float | None]
+
+    def seen(self, agree: float) -> list[str]:
+        """The sides where the border's end shows plainly: the same by color
+        and as an edge, within `agree` pixels."""
+        return [side for side in SIDES
+                if (color := self.by_color[side]) is not None
+                and (edge := self.by_edge[side]) is not None and abs(edge - color) <= agree]
+
+
+def _sides(lab: np.ndarray, margin: float | None, search: Search = PLAIN) -> Sides | None:
+    """The card's edge and the border's end on each side; None if an edge is missing.
 
     `margin`: the card was straightened with this much background around it
     (see _grown); None for a photo cropped to the card.
     """
-    lab = _lab(card)
-    width = card.shape[1]
-    outer: dict[str, float] = {}
-    by_color: dict[str, float | None] = {}
-    by_edge: dict[str, float | None] = {}
+    width = lab.shape[1]
+    sides = Sides({}, {}, {})
     for side in SIDES:
-        lines = _lines(lab, side)
+        lines = _lines(lab, side, search)
         if margin:
-            expected = (1 - 1 / margin) / 2 * _side_size(side, card.shape)
-            edge = _first_edge(lines, FINE_TILTS, expected - 0.025 * width,
-                               expected + 0.025 * width)
+            expected = (1 - 1 / margin) / 2 * _side_size(side, lab.shape)
+            edge = _first_card_edge(lines, search, expected - 0.025 * width,
+                                    expected + 0.025 * width)
             if edge is None:
                 return None
-            start, after = edge.depth, edge.end + 1
+            start, after, tilt = edge.depth, edge.end + 1, edge.tilt
         else:
-            start, after = 0.0, 0
+            start, after, tilt = 0.0, 0, 0.0
         low, high = BORDER_RANGE
-        tilt = edge.tilt if margin else 0.0
         begin, stop = max(after, start + low * width), start + high * width
-        outer[side] = start
-        by_color[side] = _border_end(lines, start, tilt, begin, stop, round(PERSIST * width))
+        sides.outer[side] = start
+        sides.by_color[side] = _border_end(lines, start, tilt, begin, stop,
+                                           round(PERSIST * width))
         inner_edge = _first_edge(lines, FINE_TILTS, begin, stop)
-        by_edge[side] = None if inner_edge is None else inner_edge.depth
-    for inner in _border_ends(by_color, by_edge, AGREE * width):
-        borders = Borders(outer, inner)
+        sides.by_edge[side] = None if inner_edge is None else inner_edge.depth
+    return sides
+
+
+def measure_borders(
+    card: np.ndarray, margin: float | None, search: Search = PLAIN
+) -> Borders | None:
+    """The border on each side of a straightened card; None if one can't be found.
+
+    `margin`: see _sides.
+    """
+    lab = _lab(card)
+    sides = _sides(lab, margin, search)
+    if sides is None:
+        return None
+    size = card.shape[1], card.shape[0]
+    for inner in _border_ends(sides.by_color, sides.by_edge, AGREE * card.shape[1]):
+        borders = Borders(sides.outer, inner, size)
         if _looks_like_one_border(lab, borders):
             return borders
     return None  # e.g. a full-art card, without a plain border
@@ -484,39 +589,180 @@ def _outlines(photo: np.ndarray) -> list[np.ndarray]:
     return found
 
 
-def card_and_borders(photo: np.ndarray) -> tuple[np.ndarray, Borders] | None:
-    """The photo cropped to the card, or the card straightened from its
-    refined outline; and its borders. None if they can't be measured.
+def _card_views(
+    photo: np.ndarray, search: Search = PLAIN
+) -> Iterator[tuple[np.ndarray, float | None]]:
+    """Views of the card to measure, most likely first, with their margin (see _sides).
 
     A photo with a card's proportions is taken as cropped to the card first:
-    the only outline inside it is a frame printed on the card. Of the
-    outlines whose borders can be measured, the largest: the card's edge
-    rather than a frame printed inside it.
+    the only outline inside it is a frame printed on the card. Then the card
+    straightened from each refined outline, the largest first: the card's
+    edge rather than a frame printed inside it.
     """
     cropped = detect.as_card(photo)
     if cropped is not None:
-        borders = measure_borders(cropped, None)
+        yield cropped, None
+    refined = [found for corners in _outlines(photo)
+               if (found := refine_outline(photo, corners, search)) is not None]
+    for corners in sorted(refined, key=cv2.contourArea, reverse=True):
+        yield _warp(photo, corners, MARGIN)[0], MARGIN
+
+
+def card_and_borders(
+    photo: np.ndarray, search: Search = PLAIN
+) -> tuple[np.ndarray, Borders] | None:
+    """The card, cropped or straightened (see _card_views), and its borders.
+
+    None if they can't be measured.
+    """
+    for card, margin in _card_views(photo, search):
+        borders = measure_borders(card, margin, search)
         if borders is not None:
-            return cropped, borders
-    best, best_area = None, 0.0
-    for corners in _outlines(photo):
-        refined = refine_outline(photo, corners)
-        if refined is None or cv2.contourArea(refined) <= best_area:
+            return card, borders
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Centering from the catalog's picture
+# ---------------------------------------------------------------------------
+
+OPPOSITE = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
+
+
+def _frame_lines(picture: np.ndarray) -> dict[str, float] | None:
+    """Where the border ends on each side of the catalog's picture (CARD_SIZE).
+
+    Taken as an edge, where the change is sharpest; only where the color
+    agrees (see _border_end), as on a plain border. None if a side has none.
+    """
+    lab = _lab(picture)
+    width = picture.shape[1]
+    low, high = BORDER_RANGE
+    found = {}
+    for side in SIDES:
+        lines = _lines(lab, side, REFERENCE)
+        edge = _first_edge(lines, FINE_TILTS, low * width, high * width)
+        color = _border_end(lines, 0.0, 0.0, low * width, high * width, round(PERSIST * width))
+        if edge is None or color is None or abs(edge.depth - color) > AGREE * width:
+            return None
+        found[side] = edge.depth
+    return found
+
+
+def _alignment(picture: np.ndarray, card: np.ndarray) -> np.ndarray | None:
+    """The perspective from the catalog's picture to the card's view, from
+    points found in both; None if too few agree on one, or too loosely."""
+    sift = cv2.SIFT_create()
+    found = [sift.detectAndCompute(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), None)
+             for image in (picture, card)]
+    (points_a, features_a), (points_b, features_b) = found
+    if features_a is None or features_b is None or len(features_b) < 2:
+        return None
+    pairs = cv2.BFMatcher(cv2.NORM_L2).knnMatch(features_a, features_b, k=2)
+    good = [pair[0] for pair in pairs
+            if len(pair) == 2 and pair[0].distance < ALIGN_RATIO * pair[1].distance]
+    if len(good) < MIN_ALIGNED:
+        return None
+    a = np.float32([points_a[m.queryIdx].pt for m in good])
+    b = np.float32([points_b[m.trainIdx].pt for m in good])
+    matrix, inliers = cv2.findHomography(a, b, cv2.RANSAC, 3.0)
+    if matrix is None:
+        return None
+    kept = inliers.ravel().astype(bool)
+    errors = np.linalg.norm(cv2.perspectiveTransform(a[kept][None], matrix)[0] - b[kept], axis=1)
+    if kept.sum() < MIN_ALIGNED or float(np.median(errors)) > MAX_ALIGN_ERROR:
+        return None
+    return matrix
+
+
+def _carried(
+    matrix: np.ndarray, frame: dict[str, float], picture_shape: tuple[int, ...],
+    card_shape: tuple[int, ...],
+) -> dict[str, float]:
+    """The picture's frame lines in the card's view, as depths from its sides
+    (at the middle of each side, like the edges found in the photo).
+
+    A card photographed upside down has the picture's left side on its right.
+    """
+    height, width = picture_shape[:2]
+    view_height, view_width = card_shape[:2]
+
+    def place(x: float, y: float) -> np.ndarray:
+        return cv2.perspectiveTransform(np.float32([[[x, y]]]), matrix)[0, 0]
+
+    turned = place(width / 2, 0)[1] > place(width / 2, height - 1)[1]
+    carried = {}
+    for side, depth in frame.items():
+        x, y = {"left": (depth, height / 2), "right": (width - 1 - depth, height / 2),
+                "top": (width / 2, depth), "bottom": (width / 2, height - 1 - depth)}[side]
+        at_x, at_y = place(x, y)
+        target = OPPOSITE[side] if turned else side
+        carried[target] = float({"left": at_x, "right": view_width - 1 - at_x, "top": at_y,
+                                 "bottom": view_height - 1 - at_y}[target])
+    return carried
+
+
+def _confirmed(sides: Sides, carried: dict[str, float], tolerance: float, agree: float) -> bool:
+    """The lines carried over lie where the photo shows them, within
+    `tolerance` pixels, on every side where the border's end shows plainly;
+    and those include one side across and one down, so that both ways of the
+    alignment are checked."""
+    seen = sides.seen(agree)
+    if not {"left", "right"} & set(seen) or not {"top", "bottom"} & set(seen):
+        return False
+    return all(abs(carried[side] - cast(float, sides.by_edge[side])) <= tolerance
+               for side in seen)
+
+
+def borders_by_reference(photo: np.ndarray, picture: np.ndarray) -> Borders | None:
+    """The borders, with their inner edge carried over from the catalog's
+    picture of the card (CARD_SIZE) where the photo doesn't show it all around.
+
+    Off-center printing moves the whole print, the border's inner edge with
+    the artwork and text: aligned on them, the picture shows where that edge
+    is printed on this card, wherever the cut falls. The picture's own cut
+    (it may be off center too) is never used: the card's edge comes from the
+    photo. The edge carried over must match the photo where it shows (see
+    _confirmed): else the alignment is off, or the picture is of another
+    print of the card, and None.
+    """
+    frame = _frame_lines(picture)
+    if frame is None:
+        return None
+    for card, margin in _card_views(photo):
+        lab = _lab(card)
+        sides = _sides(lab, margin)
+        if sides is None:
             continue
-        card, _ = _warp(photo, refined, MARGIN)
-        borders = measure_borders(card, MARGIN)
-        if borders is not None:
-            best, best_area = (card, borders), cv2.contourArea(refined)
-    return best
+        matrix = _alignment(picture, card)
+        if matrix is None:
+            continue
+        carried = _carried(matrix, frame, picture.shape, card.shape)
+        borders = Borders(sides.outer, carried, (card.shape[1], card.shape[0]))
+        scale = borders.px_per_mm()
+        tolerance = CARRIED_AGREE_MM * min(cast(tuple[float, float], scale))
+        if (_confirmed(sides, carried, tolerance, AGREE * card.shape[1])
+                and _looks_like_one_border(lab, borders)):
+            return borders
+    return None
 
 
 def centering(borders: Borders, upside_down: bool = False) -> Centering:
     left, right = borders.width("left"), borders.width("right")
     top, bottom = borders.width("top"), borders.width("bottom")
     left_pct, top_pct = 100 * left / (left + right), 100 * top / (top + bottom)
+    scale = borders.px_per_mm()
+    across = down = None
+    if scale is not None:
+        across, down = (left - right) / scale[0], (top - bottom) / scale[1]
     if upside_down:
         left_pct, top_pct = 100 - left_pct, 100 - top_pct
-    return Centering(left_pct=round(left_pct, 1), top_pct=round(top_pct, 1))
+        across, down = (None if mm is None else -mm for mm in (across, down))
+    return Centering(
+        left_pct=round(left_pct, 1), top_pct=round(top_pct, 1),
+        left_minus_right_mm=None if across is None else round(across, 2),
+        top_minus_bottom_mm=None if down is None else round(down, 2),
+    )
 
 
 def worse_side(value: Centering) -> float:
@@ -574,6 +820,9 @@ class Whitening:
     by_region: dict[str, float]  # percent of each region's band
     is_card_back: bool  # the border is the back's dark blue
     light_background: bool  # it blurs into the band and looks like whitening
+    # Blue in the band, if not the border's dark blue: the band may be on a
+    # back's artwork, its edge missed, rather than on another photo (a front).
+    bluish: bool = False
 
     @property
     def worst_region(self) -> float:
@@ -601,11 +850,8 @@ def measure_whitening(back: np.ndarray, borders: Borders) -> Whitening:
 
     # The back's border is dark blue: OpenCV hue about 100-130 of 180.
     blue = band & ~white
-    is_back = (
-        bool(blue.sum() > 0.5 * band.sum())
-        and 95 <= float(np.median(hue[blue])) <= 135
-        and float(np.median(saturation[blue])) > 80
-    )
+    bluish = bool(blue.sum() > 0.5 * band.sum()) and 95 <= float(np.median(hue[blue])) <= 135
+    is_back = bluish and float(np.median(saturation[blue])) > 80
     light = bool(background.any()) and float(white[background].mean()) > 0.3
 
     region = _regions(back.shape, borders)
@@ -614,7 +860,26 @@ def measure_whitening(back: np.ndarray, borders: Borders) -> Whitening:
         in_region = band & (region == index)
         by_region[name] = round(100 * float(white[in_region].mean()), 1) if in_region.any() else 0.0
     percent = round(100 * float(white[band].mean()), 1) if band.any() else 0.0
-    return Whitening(percent, by_region, is_back, light)
+    return Whitening(percent, by_region, is_back, light, bluish)
+
+
+def _measure_back(back: np.ndarray) -> tuple[Borders, Whitening] | str:
+    """The back's borders and whitening, or the key of the note to give instead.
+
+    Looked for as any card first, then with the BACK search (see SOFT_STEP).
+    """
+    first = None
+    for search in (PLAIN, BACK):
+        measured = card_and_borders(back, search)
+        if measured is None:
+            continue
+        card, borders = measured
+        found = measure_whitening(card, borders)
+        if found.is_card_back:
+            return borders, found
+        first = first or found
+    # Blue where the border was looked for: a back whose edge was missed.
+    return "no_back_card" if first is None or first.bluish else "not_a_back"
 
 
 # ---------------------------------------------------------------------------
@@ -636,10 +901,19 @@ NOTES = {
         "en": "Front borders not measurable: no plain border, or a blurry photo, or a "
               "background the color of the border.",
     },
+    "carried_line": {
+        "it": "Nella foto la fine del bordo non si vede su tutti i lati: è stata ritrovata "
+              "allineando la foto all'immagine della carta nel catalogo, e verificata sui "
+              "lati dove si vede. Il taglio è misurato solo sulla foto.",
+        "en": "The border's inner edge doesn't show on every side of the photo: it was "
+              "found by aligning the photo with the card's catalog picture, and checked on "
+              "the sides where it shows. The cut is measured on the photo alone.",
+    },
     "no_back_card": {
-        "it": "Bordi del retro non trovati: fotografa la carta intera su un piano scuro e "
-              "uniforme.",
-        "en": "Back borders not found: photograph the whole card on a dark, plain surface.",
+        "it": "Bordi del retro non trovati: fotografa la carta intera con più luce, su un "
+              "piano uniforme e opaco. Su un piano nero il blu del retro si vede poco.",
+        "en": "Back borders not found: photograph the whole card with more light, on a "
+              "plain matte surface. On a black one, the back's dark blue hardly shows.",
     },
     "not_a_back": {
         "it": "La seconda foto non sembra il retro di una carta Pokémon.",
@@ -709,44 +983,51 @@ def grade(front: Centering | None, back: Centering | None, whitening: Whitening)
 
 
 def assess(
-    front: np.ndarray, front_upside_down: bool, back: np.ndarray | None, lang: Lang
+    front: np.ndarray, front_upside_down: bool, back: np.ndarray | None, lang: Lang,
+    picture: Callable[[], np.ndarray | None] | None = None,
 ) -> ConditionEstimate:
     """Condition from the front photo and, if given, the back photo.
 
     `front_upside_down`: the code was read with the card turned around, so
     left and right (and top and bottom) are swapped in the photo.
+    `picture`: gets the catalog's picture of the card (CARD_SIZE), asked for
+    only if the front's borders can't be measured from the photo alone (see
+    borders_by_reference).
     Without the back, only the front's centering: no estimate.
     """
     notes: list[str] = []
     front_centering = None
     measured = card_and_borders(front)
-    if measured is not None:
-        front_centering = centering(measured[1], front_upside_down)
+    borders = measured[1] if measured is not None else None
+    carried = False
+    if borders is None and picture is not None and (reference := picture()) is not None:
+        borders = borders_by_reference(front, reference)
+        carried = borders is not None
+    if borders is not None:
+        front_centering = centering(borders, front_upside_down)
         notes.append(_centering_note("front_centering", front_centering, lang))
+        if carried:
+            notes.append(_note("carried_line", lang))
     else:
         notes.append(_note("no_front_border", lang))
 
     back_centering, whitening = None, None
     if back is not None:
-        measured = card_and_borders(back)
-        if measured is None:
-            notes.append(_note("no_back_card", lang))
+        found_back = _measure_back(back)
+        if isinstance(found_back, str):
+            notes.append(_note(found_back, lang))
         else:
-            card, borders = measured
-            found = measure_whitening(card, borders)
-            if not found.is_card_back:
-                notes.append(_note("not_a_back", lang))
+            borders, found = found_back
+            back_centering = centering(borders)
+            notes.append(_centering_note("back_centering", back_centering, lang))
+            if found.light_background:
+                notes.append(_note("light_background", lang))
             else:
-                back_centering = centering(borders)
-                notes.append(_centering_note("back_centering", back_centering, lang))
-                if found.light_background:
-                    notes.append(_note("light_background", lang))
-                else:
-                    whitening = found
-                    worn = [REGION_NAMES[lang][name] for name, share in found.by_region.items()
-                            if share >= WORN_REGION]
-                    notes.append(_note("whitening", lang, where=", ".join(worn)) if worn
-                                 else _note("no_whitening", lang))
+                whitening = found
+                worn = [REGION_NAMES[lang][name] for name, share in found.by_region.items()
+                        if share >= WORN_REGION]
+                notes.append(_note("whitening", lang, where=", ".join(worn)) if worn
+                             else _note("no_whitening", lang))
 
     estimate = None
     if whitening is not None:

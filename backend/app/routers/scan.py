@@ -78,8 +78,10 @@ def scan_card(
     When a card is found, or its code is read but no card in the catalog has
     it (status 'not_found'), `condition` holds the front's centering and, with
     the optional back photo, the back's centering, the whitening on its
-    edges and an indicative grade (null without the back). Photograph the
-    back on a dark, plain surface.
+    edges and an indicative grade (null without the back). For a card found
+    whose border's inner edge doesn't show on every side of the photo, that
+    edge is carried over from the card's catalog picture, aligned on its
+    artwork and text; the cut is always measured on the photo.
     """
     photos = {"front": front, "back": back}
     read: dict[str, tuple[UploadFile, bytes]] = {}
