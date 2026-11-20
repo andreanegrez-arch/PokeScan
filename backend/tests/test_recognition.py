@@ -5,11 +5,14 @@ turned into phone-like photos by jobs/evaluate_scan.py. The OCR models run
 for real: the first test that uses them waits a few seconds for loading.
 """
 
+import json
+
 import cv2
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.db import get_conn
 from app.main import app
 from app.recognition import detect
@@ -79,6 +82,17 @@ def test_misread_slashes_and_symbols_are_also_tried():
     assert ("107", "236") in [(c.number, c.total) for c in read_code(["5107/236"]).codes]
     assert ("136", "189") in [(c.number, c.total) for c in read_code(["1366/89"]).codes]
     assert ("SV42", "SV94") in [(c.number, c.total) for c in read_code(["ASV42/SV94"]).codes]
+
+
+def test_readings_with_digits_changed_are_marked_as_guesses():
+    reading = read_code(["161/5"])
+
+    codes = [(c.number, c.total) for c in reading.codes]
+    guesses = [(c.number, c.total) for c in reading.guesses]
+    assert codes[0] == ("161", "5")
+    assert guesses == [("1", "5"), ("16", "15")]
+    # Letters stuck to the number keep its digits: not a guess.
+    assert read_code(["SVIEN025/198"]).guesses == []
 
 
 def test_copyright_lines_are_not_codes():
@@ -197,6 +211,23 @@ def test_cards_with_the_same_code_and_name_are_left_to_the_user(catalog):
     assert [c.card_id for c in result.candidates] == ["old2-58", "old1-58"]
 
 
+def test_a_corrected_code_is_kept_when_the_name_agrees(catalog):
+    # '5136/189': a symbol read as a 5. Tried as 136/189, Furret's code.
+    result = identify(catalog, detect.decode(photo("5136/189", "Furret")), "it")
+
+    assert result.status == "matched"
+    assert result.match.card_id == "swsh3-136"
+
+
+def test_a_corrected_code_the_name_disagrees_with_is_not_found(catalog):
+    # The real photo behind this test: a Chinese card read as '161/5', which
+    # was tried as 1/5 and offered two unrelated cards worth hundreds of euros.
+    result = identify(catalog, detect.decode(photo("5136/189", "Eevee")), "it")
+
+    assert result.status == "not_found"
+    assert (result.code.number, result.code.total) == ("5136", "189")
+
+
 def test_a_code_no_card_has_is_not_found(catalog):
     result = identify(catalog, detect.decode(photo("999/999", "Nobody")), "it")
 
@@ -263,6 +294,19 @@ def test_scan_endpoint_estimates_the_condition_with_the_back(client):
     assert condition["estimate"] is not None
     assert condition["back_centering"] is not None
     assert condition["edge_whitening_pct"] is not None
+
+
+def test_scan_endpoint_keeps_the_photos_when_asked(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "scan_archive_dir", tmp_path)
+    jpeg = photo("DAA 136/189", "Furret")
+
+    client.post("/scan", files={"front": ("card.jpg", jpeg, "image/jpeg")})
+
+    [folder] = tmp_path.iterdir()
+    assert (folder / "front.jpg").read_bytes() == jpeg
+    assert not (folder / "back.jpg").exists()
+    saved = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+    assert saved["result"]["match"]["card_id"] == "swsh3-136"
 
 
 def test_scan_endpoint_names_the_unreadable_back(client):

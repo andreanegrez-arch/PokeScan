@@ -1,6 +1,13 @@
 // Numbers and dates in the reader's language.
-import type { CardSummary } from './api/client'
+import type { CardSummary, CollectorCode } from './api/client'
 import type { Strings } from './i18n'
+
+/** The code that was looked up ('SVI 025/198'), not the raw OCR text around it. */
+export function formatCode(code: CollectorCode | null) {
+  if (!code) return ''
+  const number = code.total ? `${code.number}/${code.total}` : code.number
+  return code.set_code ? `${code.set_code} ${number}` : number
+}
 
 /** "25/102" as printed on the card; promos have no total. */
 export function cardNumber(card: Pick<CardSummary, 'local_number' | 'set_total'>) {

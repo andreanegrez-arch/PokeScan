@@ -3,7 +3,7 @@ import { scanCard, type ScanResult } from '../api/client'
 import { CardTile } from '../components/CardTile'
 import { ConditionPanel } from '../components/ConditionPanel'
 import { PhotoPicker } from '../components/PhotoPicker'
-import { errorMessage } from '../format'
+import { errorMessage, formatCode } from '../format'
 import { useLang } from '../i18n'
 import { navigate, parseRoute, paths, useTitle } from '../router'
 
@@ -82,7 +82,7 @@ export function ScanPage({
 
 function ScanOutcome({ result }: { result: ScanResult }) {
   const { t } = useLang()
-  const code = result.code?.raw ?? ''
+  const code = formatCode(result.code)
   switch (result.status) {
     case 'matched':
       return (
@@ -111,6 +111,7 @@ function ScanOutcome({ result }: { result: ScanResult }) {
       return (
         <section className="outcome" aria-live="polite">
           <p>{result.status === 'unreadable' ? t.unreadable : t.notFound(code)}</p>
+          {result.status === 'not_found' && <p className="fine-print">{t.otherSets}</p>}
           <a className="button" href={paths.search(code)}>
             {t.searchByHand}
           </a>

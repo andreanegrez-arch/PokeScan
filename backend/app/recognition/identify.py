@@ -8,11 +8,16 @@
 3. Look the code up in the catalog.
 4. Several cards with that code (sets of the same size): keep those whose set
    code was printed next to the number, then those whose name is printed at
-   the top of the card.
+   the top of the card. A code corrected from what was read ('161/5' tried as
+   '1/5') is kept only if one of the two agrees: else it's just a misreading
+   that happens to be some card's code.
 5. Still more than one: 'ambiguous', and the user picks.
 6. A card was found: estimate its condition from the same photo and, if
    given, a photo of the back (see condition.py).
 """
+
+from collections.abc import Callable
+from functools import cache
 
 import numpy as np
 import psycopg
@@ -88,14 +93,37 @@ def _views(image):
     yield detect.upside_down(image), _whole, None, True
 
 
-def _look_up(
-    conn: psycopg.Connection, codes: list[CollectorCode], lang: Lang
-) -> tuple[CollectorCode | None, list[CardSummary]]:
-    """The first of the possible codes that some card has, and those cards."""
-    for code in codes:
-        if candidates := catalog.search_by_code(conn, code, lang, MAX_CANDIDATES):
-            return code, candidates
-    return (codes[0] if codes else None), []
+def _name_reader(view, name_region, code_lines: list[str]) -> Callable[[], list[str]]:
+    """The text where the name is printed, read once and only if asked for.
+
+    Without a name region (the whole photo was read), the lines read already.
+    """
+    @cache
+    def read() -> list[str]:
+        return text.read_lines(name_region(view)) if name_region else code_lines
+
+    return read
+
+
+def _narrow(
+    conn: psycopg.Connection,
+    code: CollectorCode,
+    candidates: list[CardSummary],
+    reading: text.CodeReading,
+    name_lines: Callable[[], list[str]],
+) -> tuple[CollectorCode, list[CardSummary], bool]:
+    """The candidates the set code and the name leave, and whether either matched."""
+    confirmed = False
+    with_set_code = by_set_code(candidates, reading.set_hints)
+    if with_set_code is not candidates:  # the set code was read too
+        code = code.model_copy(update={"set_code": with_set_code[0].set_code})
+        candidates, confirmed = with_set_code, True
+    if len(candidates) > 1 or (code in reading.guesses and not confirmed):
+        names = catalog.names_of(conn, [c.card_id for c in candidates])
+        with_name = by_name(candidates, names, name_lines())
+        if with_name is not candidates:  # a name was read
+            candidates, confirmed = with_name, True
+    return code, candidates, confirmed
 
 
 def _result(
@@ -110,27 +138,22 @@ def identify(
     conn: psycopg.Connection, image: np.ndarray, lang: Lang, back: np.ndarray | None = None
 ) -> ScanResult:
     """Identify the card in a photo (see detect.decode) and estimate its condition."""
-    first_code: CollectorCode | None = None
+    first_code: CollectorCode | None = None  # read, but no card has it
     for view, code_region, name_region, turned in _views(image):
         lines = text.read_lines(code_region(view))
         reading = text.read_code(lines)
-        code, candidates = _look_up(conn, reading.codes, lang)
-        if candidates:
-            break
-        first_code = first_code or code  # read, but no card has it: try other views
-    else:
-        return _result("not_found", first_code) if first_code else _result("unreadable")
-
-    with_set_code = by_set_code(candidates, reading.set_hints)
-    if with_set_code is not candidates:  # the set code was read too
-        code = code.model_copy(update={"set_code": with_set_code[0].set_code})
-        candidates = with_set_code
-    if len(candidates) > 1:
-        name_lines = text.read_lines(name_region(view)) if name_region else lines
-        names = catalog.names_of(conn, [c.card_id for c in candidates])
-        candidates = by_name(candidates, names, name_lines)
-
-    estimate = condition.assess(image, turned, back, lang)
-    if len(candidates) == 1:
-        return _result("matched", code, match=candidates[0], condition=estimate)
-    return _result("ambiguous", code, candidates=candidates, condition=estimate)
+        name_lines = _name_reader(view, name_region, lines)
+        for read in reading.codes:
+            candidates = catalog.search_by_code(conn, read, lang, MAX_CANDIDATES)
+            if not candidates:
+                continue
+            code, candidates, confirmed = _narrow(conn, read, candidates, reading, name_lines)
+            if read in reading.guesses and not confirmed:
+                continue
+            estimate = condition.assess(image, turned, back, lang)
+            if len(candidates) == 1:
+                return _result("matched", code, match=candidates[0], condition=estimate)
+            return _result("ambiguous", code, candidates=candidates, condition=estimate)
+        if reading.codes:
+            first_code = first_code or reading.codes[0]  # try the other views
+    return _result("not_found", first_code) if first_code else _result("unreadable")

@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Kept out of the URL so that any character works without URL-encoding.
     database_password: str | None = None
     cors_origins: list[str] = ["http://localhost:5173"]
+    # Development: keep every scanned photo with its result here, to study
+    # real phone photos. Relative paths are inside backend/. Off when unset.
+    scan_archive_dir: Path | None = None
 
 
 settings = Settings()

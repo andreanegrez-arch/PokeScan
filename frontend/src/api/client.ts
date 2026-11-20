@@ -5,6 +5,7 @@ import type { components } from './schema'
 type Schemas = components['schemas']
 export type ScanResult = Schemas['ScanResult']
 export type CardSummary = Schemas['CardSummary']
+export type CollectorCode = Schemas['CollectorCode']
 export type CardDetail = Schemas['CardDetail']
 export type CardPrices = Schemas['CardPrices']
 export type VariantPrices = Schemas['VariantPrices']

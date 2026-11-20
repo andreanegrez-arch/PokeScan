@@ -1,6 +1,10 @@
+import json
+from datetime import datetime
+
 import numpy as np
 from fastapi import APIRouter, HTTPException, UploadFile
 
+from app.config import ENV_FILE, settings
 from app.db import DbConnection
 from app.recognition.detect import UnreadableImage, decode
 from app.recognition.identify import identify
@@ -8,20 +12,40 @@ from app.schemas import Lang, ScanResult
 
 router = APIRouter(tags=["scan"])
 
-ACCEPTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+ACCEPTED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_PHOTO_BYTES = 20 * 1024 * 1024  # a phone photo is 2-8 MB
 
 
-def _image(photo: UploadFile) -> np.ndarray:
+def _read(photo: UploadFile) -> bytes:
     data = photo.file.read(MAX_PHOTO_BYTES + 1)
     if len(data) > MAX_PHOTO_BYTES:
         raise HTTPException(status_code=413, detail=f"{photo.filename}: larger than 20 MB")
+    return data
+
+
+def _image(photo: UploadFile, data: bytes) -> np.ndarray:
     try:
         return decode(data)
     except UnreadableImage:
         raise HTTPException(
             status_code=422, detail=f"{photo.filename}: not a readable image"
         ) from None
+
+
+def _archive(photos: dict[str, tuple[UploadFile, bytes]], lang: Lang, result: ScanResult) -> None:
+    """Keep the photos and the result in their own folder (see scan_archive_dir)."""
+    root = settings.scan_archive_dir
+    if root is None:
+        return
+    if not root.is_absolute():
+        root = ENV_FILE.parent / root
+    folder = root / datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+    folder.mkdir(parents=True)
+    for side, (photo, data) in photos.items():
+        (folder / (side + ACCEPTED_IMAGE_TYPES[photo.content_type])).write_bytes(data)
+    summary = {"lang": lang, "result": result.model_dump(mode="json")}
+    (folder / "result.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),
+                                        encoding="utf-8")
 
 
 # A plain `def`: recognition is CPU work, so FastAPI runs it in a worker thread
@@ -56,12 +80,19 @@ def scan_card(
     edges and an indicative grade (null without the back). Photograph the
     back on a dark, plain surface.
     """
-    for photo in (front, back):
-        if photo is not None and photo.content_type not in ACCEPTED_IMAGE_TYPES:
+    photos = {"front": front, "back": back}
+    read: dict[str, tuple[UploadFile, bytes]] = {}
+    for side, photo in photos.items():
+        if photo is None:
+            continue
+        if photo.content_type not in ACCEPTED_IMAGE_TYPES:
             raise HTTPException(
                 status_code=422,
                 detail=f"{photo.filename}: upload a JPEG, PNG or WebP image",
             )
-    front_image = _image(front)
-    back_image = _image(back) if back is not None else None
-    return identify(conn, front_image, lang, back_image)
+        read[side] = (photo, _read(photo))
+    images = {side: _image(photo, data) for side, (photo, data) in read.items()}
+
+    result = identify(conn, images["front"], lang, images.get("back"))
+    _archive(read, lang, result)
+    return result

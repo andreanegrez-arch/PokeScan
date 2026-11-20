@@ -56,6 +56,9 @@ const it = {
     'Non riesco a leggere il codice in basso sulla carta. Riprova con una foto più nitida ' +
     'e ben illuminata, oppure cerca la carta a mano.',
   notFound: (code: string) => `Il codice ${code} non corrisponde a nessuna carta del catalogo.`,
+  otherSets:
+    'Il catalogo ha le espansioni internazionali (inglese, italiano e le altre lingue ' +
+    'europee). Le carte giapponesi, cinesi e coreane hanno espansioni proprie e non ci sono.',
   searchByHand: 'Cerca a mano',
 
   searchTitle: 'Cerca una carta',
@@ -192,6 +195,9 @@ const en: Strings = {
     "I can't read the code at the bottom of the card. Try a sharper, well-lit photo, " +
     'or search for the card by hand.',
   notFound: (code: string) => `Code ${code} matches no card in the catalog.`,
+  otherSets:
+    'The catalog has the international sets (English, Italian and the other European ' +
+    "languages). Japanese, Chinese and Korean cards have sets of their own and aren't in it.",
   searchByHand: 'Search by hand',
 
   searchTitle: 'Search for a card',

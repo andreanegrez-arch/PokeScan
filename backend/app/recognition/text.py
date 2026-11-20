@@ -79,6 +79,10 @@ NOT_SET_CODES = {"GAME", "FREAK", "GAMEFREAK"}
 class CodeReading:
     codes: list[CollectorCode] = field(default_factory=list)  # most likely first
     set_hints: list[str] = field(default_factory=list)  # uppercase words, e.g. 'SVIEN'
+    # Codes with digits changed from what was read ('161/5' -> '1/5'): any
+    # misreading can be "corrected" into a code some card has, so these need
+    # the card's name or set code to agree.
+    guesses: list[CollectorCode] = field(default_factory=list)
 
 
 def _digits(text: str) -> str:
@@ -89,10 +93,12 @@ def read_code(lines: list[str]) -> CodeReading:
     """Collector codes found in OCR lines, plus words that may be the set code."""
     reading = CodeReading()
 
-    def add(raw: str, number: str, total: str | None) -> None:
+    def add(raw: str, number: str, total: str | None, guess: bool = False) -> None:
         code = CollectorCode(raw=raw, set_code=None, number=number, total=total)
         if code not in reading.codes:
             reading.codes.append(code)
+            if guess:
+                reading.guesses.append(code)
 
     for line in lines:
         text = line.upper()
@@ -115,9 +121,9 @@ def read_code(lines: list[str]) -> CodeReading:
                 add(raw, total_prefix + digits, total)
             if not prefix and not total_prefix and len(digits) > len(total_digits):
                 # a symbol read as a digit ('5107/236' is 107/236);
-                add(raw, digits[-len(total_digits) :], total)
+                add(raw, digits[-len(total_digits) :], total, guess=True)
                 # the slash read as a digit and a 1 as the slash ('1366/89' is 136/189).
-                add(raw, digits[:-1], "1" + total_digits)
+                add(raw, digits[:-1], "1" + total_digits, guess=True)
         for match in PROMO.finditer(text):
             if re.search(r"\d", match["digits"]):
                 add(match.group(0), match["prefix"] + _digits(match["digits"]), None)

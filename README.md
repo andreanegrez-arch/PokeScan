@@ -22,11 +22,15 @@ card from the **code printed at the bottom**, never from the artwork alone:
 2. Read the bottom strip with OCR (RapidOCR, on the CPU): `025/198` on most
    cards, `SWSH020` on promos. Nothing found: the card may be upside down, so
    read it again turned around.
-3. Look it up by number + official set size.
+3. Look it up by number + official set size. A code no card has may be a
+   misreading (`5107/236` for 107/236, a symbol read as a 5), so corrected
+   versions are tried too.
 4. Several sets have that size (e.g. 136/189 exists in *Darkness Ablaze* and
    *Astral Radiance*): keep the card whose set code is printed next to the
    number (`SVI` on recent cards), then the one whose name is printed at the
-   top.
+   top. A corrected code is kept only if the set code or the name agrees with
+   it. The first real phone photo showed why: a Chinese card's code, misread
+   as `161/5`, was "corrected" to 1/5, and two unrelated cards were offered.
 5. Still undecided: show the candidates and let the user choose.
    No code readable: ask for a better photo (or a manual search by code).
 6. A card was found: estimate its condition (see [Condition](#condition)).
@@ -215,6 +219,11 @@ call an API somewhere else, copy `.env.example` to `.env.local` and set
 1. Run `npm run dev:lan` instead of `npm run dev`. Vite prints a `Network`
    address such as `http://192.168.1.7:5173`.
 2. Open that address on the phone.
+
+To study real phone photos, start the backend with `SCAN_ARCHIVE_DIR` set (see
+`backend/.env.example`): each scan is kept in a folder of its own, with the
+photos and the result. The folder is inside `backend/.cache/`, which git
+ignores.
 
 Only Vite is reachable from the network. The backend stays on localhost, behind
 Vite's forwarding, so it needs no CORS change. The page is plain http, which is
