@@ -41,8 +41,8 @@ MAX_CANDIDATES = 20
 class _Illustration:
     """The photo's illustration, compared with the editions' only when asked, once each."""
 
-    def __init__(self, image: np.ndarray, editions: list[artwork.Pool], chosen: bool):
-        self.image, self.editions, self.chosen = image, editions, chosen
+    def __init__(self, image: np.ndarray, artworks: list[artwork.Artwork], set_id: str | None):
+        self.image, self.artworks, self.set_id = image, artworks, set_id
         self.seen: dict[tuple, tuple[np.ndarray | None, artwork.Match | None]] = {}
 
     def _card(self, turned: bool) -> np.ndarray | None:
@@ -54,32 +54,31 @@ class _Illustration:
 
     def match(self, view: np.ndarray | None, turned: bool,
               total: str | None) -> artwork.Match | None:
-        """The illustration of the edition(s) of this size the card shows, if clearly one.
+        """The illustration printed with this set size the card shows, if clearly one.
 
-        `view`: the card as straightened to read its code; None to straighten it
-        here. `total` None: search every edition (stricter), the last resort.
-        An edition the user chose is searched whatever the size read.
+        Several editions may share the size (/102: Base Set and Triumphant):
+        all their illustrations are compared. `view`: the card as straightened
+        to read its code; None to straighten it here. `total` None: compare
+        every edition's (stricter), the last resort. In an edition the user
+        chose, its illustrations are compared whatever the size read.
         """
-        if self.chosen:
-            editions, size = self.editions, None
+        if self.set_id is not None:
+            chosen = self.set_id
+            keep, total, strict = (lambda p: p.set_id == chosen), None, False
         elif total is None:
-            editions, size = self.editions, None
-        elif total.isdigit():
-            size = int(total)
-            editions = [pool for pool in self.editions if size in pool.totals]
+            keep, strict = (lambda p: True), True
         else:
-            return None
-        if not editions:
-            return None
-        key = (id(view), turned, size)
+            size = total
+            keep, strict = (lambda p: artwork.same_number(p.set_total, size)), False
+        key = (id(view), turned, total)
         if key not in self.seen:
-            card = view if view is not None else self._card(turned)
             found = None
-            if card is not None:
-                strict = total is None and not self.chosen
-                found = artwork.best_match(
-                    card, editions, size,
-                    artwork.MIN_INLIERS_ANYWHERE if strict else artwork.MIN_INLIERS)
+            if any(keep(p) for art in self.artworks for p in art.printings):
+                card = view if view is not None else self._card(turned)
+                if card is not None:
+                    found = artwork.best_match(
+                        card, self.artworks, keep,
+                        artwork.MIN_INLIERS_ANYWHERE if strict else artwork.MIN_INLIERS)
             self.seen[key] = (view, found)  # the view is kept: its id stays its own
         return self.seen[key][1]
 
@@ -87,19 +86,22 @@ class _Illustration:
 def _illustrated(
     conn: psycopg.Connection, seen: artwork.Match, read: CollectorCode | None, lang: Lang
 ) -> tuple[CollectorCode | None, list[CardSummary]]:
-    """The cards the illustration matched (one, unless reprinted alike), and the
-    code read, corrected to theirs."""
-    ids = {p.card_id for p in seen.printings}
-    printed = seen.printings[0]
-    lookup = CollectorCode(raw=printed.number, set_code=None, number=printed.number,
-                           total=str(printed.set_total) if printed.set_total else None)
-    cards = [c for c in catalog.search_by_code(conn, lookup, lang, MAX_CANDIDATES)
-             if c.card_id in ids]
+    """The cards the illustration matched, and the code read, corrected to theirs.
+
+    An illustration printed more than once with the size read (in two editions
+    of that size, say) is the printing whose number was read; if none was,
+    the user picks among them.
+    """
+    printings = seen.printings
+    if read is not None:
+        printings = [p for p in printings if artwork.same_number(p.number, read.number)]             or printings
+    totals = {p.card_id: p.set_total for p in printings}
+    cards = catalog.summaries_of(conn, list(totals), lang)
     if read is None or not cards:
         return None, cards
     return read.model_copy(update={"number": cards[0].local_number,
                                    "set_code": cards[0].set_code,
-                                   "total": lookup.total}), cards
+                                   "total": totals[cards[0].card_id]}), cards
 
 
 def by_set_code(candidates: list[CardSummary], hints: list[str]) -> list[CardSummary]:
@@ -221,10 +223,7 @@ def identify(
     `set_id`: the edition, as the user chose it: its illustrations are
     searched whatever the set size read.
     """
-    editions = artwork.pools() if illustrations else []
-    if set_id is not None:
-        editions = [pool for pool in editions if pool.set_id == set_id]
-    illustration = _Illustration(image, editions, chosen=set_id is not None)
+    illustration = _Illustration(image, artwork.library() if illustrations else [], set_id)
 
     def found(cards, code, turned) -> ScanResult:
         card = cards[0]

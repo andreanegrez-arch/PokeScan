@@ -5,23 +5,28 @@ Raichu's 14/102 read as 4/102 would make Charizard. So the illustration, alone,
 is compared with the illustrations of the edition the code points to: it
 confirms the number read, or corrects it.
 
-An illustration is kept as a fingerprint, never as a picture:
-- the artwork box only (LAYOUTS), so that no printed text, which changes with
-  the language, is in it: one fingerprint serves every language the card was
-  printed in;
-- a perceptual hash (DCT of the box, 64 bits), and ORB keypoints: corners of
-  the drawing with a 32-byte descriptor each, matched by position too, since
-  both the photo and the picture are straightened to the same size.
+An illustration is kept as a fingerprint, never as a picture: ORB keypoints
+(corners of the drawing, with a 32-byte descriptor each) found in the artwork
+box only (LAYOUTS). No printed text is in the box (LEGEND halves aside), so
+one fingerprint serves
+every language the card was printed in, and every edition that reprinted the
+illustration (Base Set 2, Legendary Collection): each printing (language,
+edition, number) links to it. Photo and picture are straightened to the same
+size, so keypoints are matched by position too.
 
 Fingerprints come one file per edition, backend/fingerprints/<set_id>.sqlite,
-made by jobs/build_fingerprints.py (see SCHEMA). An edition is chosen by the
-set size OCR read (/102: Base Set), or by the user; only when nothing at all
-was read are all editions searched.
+made by jobs/build_fingerprints.py (see SCHEMA). A reprint's file lists its
+printings, linked to the illustration kept in the file of the edition that
+printed it first. Which illustrations are compared: those printed with the
+set size OCR read (/102: Base Set and Triumphant), or in the edition the user
+chose; all of them only when nothing at all was read.
 """
 
 import logging
+import re
 import sqlite3
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,20 +36,32 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 POOLS = Path(__file__).resolve().parents[2] / "fingerprints"
-FORMAT = "1"
+FORMAT = "2"
 
 # Where the illustration is, as fractions of the straightened card (left, top,
 # right, bottom). A little inside the frame: a photo straightened a few pixels
 # off must still have no frame or text in it.
 LAYOUTS = {
-    # Wizards of the Coast era (Base Set to Neo, Legendary Collection).
+    # Wizards of the Coast era (Base Set to Neo Destiny, Legendary Collection).
     "wizards-pokemon": (0.12, 0.14, 0.88, 0.47),
     "wizards-trainer": (0.13, 0.26, 0.87, 0.52),  # under 'TRAINER' and the name
     "wizards-energy": (0.08, 0.15, 0.92, 0.70),  # the symbol on its background
+    # e-Card (Expedition, Aquapolis, Skyridge): a lower picture, the card-e strip on the side.
+    "ecard-pokemon": (0.10, 0.14, 0.90, 0.45),
+    "ecard-trainer": (0.12, 0.19, 0.88, 0.47),
+    "ecard-energy": (0.10, 0.12, 0.90, 0.62),
+    # HeartGold & SoulSilver (Triumphant). Primes share the Pokémon box.
+    "hgss-pokemon": (0.08, 0.11, 0.92, 0.52),
+    "hgss-trainer": (0.08, 0.15, 0.92, 0.52),
+    "hgss-energy": (0.04, 0.09, 0.96, 0.68),
+    # Half of a LEGEND: the picture runs nearly edge to edge, the text on it.
+    "hgss-legend": (0.12, 0.06, 0.95, 0.94),
 }
 # TCGdex series -> era (the prefix of the layouts above).
-SERIES_ERAS = {"base": "wizards", "gym": "wizards", "neo": "wizards", "lc": "wizards"}
+SERIES_ERAS = {"base": "wizards", "gym": "wizards", "neo": "wizards", "lc": "wizards",
+               "ecard": "ecard", "hgss": "hgss"}
 CATEGORY_LAYOUTS = {"Pokemon": "pokemon", "Trainer": "trainer", "Energy": "energy"}
+RARITY_LAYOUTS = {"LEGEND": "legend"}  # cards whose box isn't their category's
 
 ART_WIDTH = 480  # the box is resized to this width before fingerprinting
 DETAIL_SIGMA = 6  # px: shading broader than this is left out of the fingerprint
@@ -73,42 +90,43 @@ CREATE TABLE meta (
     value  TEXT NOT NULL
 );
 
--- One row per illustration. Pictures in English: the same illustration is
--- printed in every language of the edition. A card printed only in Japanese,
--- Korean or Chinese has its own row, from a source for that language.
+-- The illustrations this edition printed first. Pictures in English: the
+-- same illustration is printed in every language of the edition. A card
+-- printed only in Japanese, Korean or Chinese has its own row, from a source
+-- for that language.
 CREATE TABLE artworks (
-    artwork_id   INTEGER PRIMARY KEY,
+    artwork_key  TEXT PRIMARY KEY,  -- '<set_id>/<number>' of its first printing, e.g. 'base1/4'
     layout       TEXT NOT NULL,     -- where the box is: a key of artwork.LAYOUTS
     source       TEXT NOT NULL,     -- where the picture came from, e.g. 'pokemontcg.io'
     source_url   TEXT NOT NULL,     -- the picture, for a preview loaded from there
-    phash        BLOB NOT NULL,     -- 8 bytes
     keypoints    BLOB NOT NULL,     -- float16 x, y per keypoint, in the box at ART_WIDTH
     descriptors  BLOB NOT NULL      -- 32 bytes per keypoint (ORB)
 );
 
--- The printed cards that carry an illustration: one per language it was
--- printed in. Japanese, Korean and Chinese editions have sets and numbers of
--- their own, hence set_id and set_total on each printing.
+-- This edition's printed cards, in each language the edition was printed in.
+-- A reprint links to the illustration in the file of the edition that
+-- printed it first. Japanese, Korean and Chinese editions have sets and
+-- numbers of their own, hence set_id and set_total on each printing.
 CREATE TABLE printings (
-    artwork_id  INTEGER NOT NULL REFERENCES artworks (artwork_id),
-    lang        TEXT NOT NULL,      -- 'en', 'it'; later 'ja', 'ko', 'zh'
-    set_id      TEXT NOT NULL,      -- the edition in that language (TCGdex id)
-    set_total   INTEGER,            -- printed after the slash, e.g. 102
-    number      TEXT NOT NULL,      -- printed before it
-    card_id     TEXT NOT NULL,      -- catalog id (TCGdex)
-    name        TEXT NOT NULL,      -- from that language's official list, never translated
+    artwork_key  TEXT NOT NULL,     -- in this file's artworks or another edition's
+    lang         TEXT NOT NULL,     -- 'en', 'it'; later 'ja', 'ko', 'zh'
+    set_id       TEXT NOT NULL,     -- the edition in that language (TCGdex id)
+    set_total    TEXT,              -- as printed after the slash: '102', 'H32'; NULL if none
+    number       TEXT NOT NULL,     -- as printed before it: '14', 'H01'
+    card_id      TEXT NOT NULL,     -- catalog id (TCGdex)
+    name         TEXT NOT NULL,     -- from that language's official list, never translated
     PRIMARY KEY (lang, set_id, number)
 );
-CREATE INDEX printings_artwork ON printings (artwork_id);
+CREATE INDEX printings_artwork ON printings (artwork_key);
 
 -- Reserved: a name for a language the card was never printed in, shown
 -- marked as not official next to the original.
 CREATE TABLE unofficial_names (
-    artwork_id  INTEGER NOT NULL REFERENCES artworks (artwork_id),
-    lang        TEXT NOT NULL,
-    name        TEXT NOT NULL,
-    method      TEXT NOT NULL,      -- how the translation was made
-    PRIMARY KEY (artwork_id, lang)
+    artwork_key  TEXT NOT NULL,
+    lang         TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    method       TEXT NOT NULL,     -- how the translation was made
+    PRIMARY KEY (artwork_key, lang)
 );
 """
 
@@ -120,15 +138,17 @@ CREATE TABLE unofficial_names (
 
 @dataclass
 class Fingerprint:
-    phash: bytes  # 8 bytes
     keypoints: np.ndarray  # (n, 2) float32
     descriptors: np.ndarray  # (n, 32) uint8
 
 
-def layout_for(series_id: str | None, category: str | None) -> str | None:
+def layout_for(series_id: str | None, category: str | None,
+               rarity: str | None = None) -> str | None:
     """The layout of a card's illustration; None for eras not measured yet."""
-    era, kind = SERIES_ERAS.get(series_id or ""), CATEGORY_LAYOUTS.get(category or "")
-    return f"{era}-{kind}" if era and kind else None
+    era = SERIES_ERAS.get(series_id or "")
+    kind = RARITY_LAYOUTS.get(rarity or "") or CATEGORY_LAYOUTS.get(category or "")
+    layout = f"{era}-{kind}" if era and kind else None
+    return layout if layout in LAYOUTS else None
 
 
 def box(card: np.ndarray, layout: str) -> np.ndarray:
@@ -154,18 +174,6 @@ def detail(gray: np.ndarray) -> np.ndarray:
     return ((lines + 1) * 127.5).astype(np.uint8)
 
 
-def phash(gray: np.ndarray) -> bytes:
-    """64-bit perceptual hash: low frequencies of the DCT above or below their median."""
-    small = cv2.resize(gray, (32, 32), interpolation=cv2.INTER_AREA).astype(np.float32)
-    low = cv2.dct(small)[:8, :8].flatten()[1:]  # without the mean (DC)
-    bits = np.append(low > np.median(low), False)
-    return np.packbits(bits).tobytes()
-
-
-def hamming(a: bytes, b: bytes) -> int:
-    return int(np.unpackbits(np.frombuffer(a, np.uint8) ^ np.frombuffer(b, np.uint8)).sum())
-
-
 _orb = threading.local()
 
 
@@ -177,12 +185,11 @@ def _detector() -> cv2.ORB:
 
 def fingerprint(card: np.ndarray, layout: str) -> Fingerprint:
     """The fingerprint of a straightened card's illustration (see detect.CARD_SIZE)."""
-    gray = box(card, layout)
-    keypoints, descriptors = _detector().detectAndCompute(detail(gray), None)
+    keypoints, descriptors = _detector().detectAndCompute(detail(box(card, layout)), None)
     if descriptors is None:
         keypoints, descriptors = (), np.zeros((0, 32), np.uint8)
     points = np.array([k.pt for k in keypoints], np.float32).reshape(-1, 2)
-    return Fingerprint(phash(gray), points, descriptors)
+    return Fingerprint(points, descriptors)
 
 
 def agreement(photo: Fingerprint, picture: Fingerprint) -> int:
@@ -210,7 +217,7 @@ def agreement(photo: Fingerprint, picture: Fingerprint) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Editions (pools of fingerprints)
+# Editions' files
 # ---------------------------------------------------------------------------
 
 
@@ -218,7 +225,7 @@ def agreement(photo: Fingerprint, picture: Fingerprint) -> int:
 class Printing:
     lang: str
     set_id: str
-    set_total: int | None
+    set_total: str | None  # as printed: '102', 'H32'
     number: str
     card_id: str
     name: str
@@ -226,95 +233,109 @@ class Printing:
 
 @dataclass
 class Artwork:
-    artwork_id: int
+    key: str  # '<set_id>/<number>' of its first printing
     layout: str
     source_url: str
     fingerprint: Fingerprint
     printings: list[Printing] = field(default_factory=list)
 
 
-@dataclass
-class Pool:
-    set_id: str
-    official_count: int | None
-    artworks: list[Artwork]
-
-    @property
-    def totals(self) -> set[int]:
-        return {p.set_total for a in self.artworks for p in a.printings if p.set_total}
+def artwork_key(set_id: str, number: str) -> str:
+    return f"{set_id}/{number}"
 
 
-def write_pool(path: Path, meta: dict[str, str], artworks: list[Artwork]) -> None:
-    """Save an edition's fingerprints (replacing the file only once complete)."""
+def same_number(a: str | None, b: str | None) -> bool:
+    """'025' is 25, 'H01' is H1: printed and catalog numbers differ in zero padding."""
+    def plain(text: str) -> str:
+        return re.sub(r"(^|[A-Z])0+(\d)", r"\1\2", text.strip().upper())
+    return a is not None and b is not None and plain(a) == plain(b)
+
+
+def write_edition(path: Path, meta: dict[str, str], artworks: list[Artwork],
+                  printings: list[tuple[str, Printing]]) -> None:
+    """Save an edition: the illustrations it printed first, and every printing
+    of it as (artwork key, printing). The file is replaced only once complete."""
     partial = path.with_suffix(".part")
     partial.unlink(missing_ok=True)
-    with sqlite3.connect(partial) as db:
+    db = sqlite3.connect(partial)
+    with db:
         db.executescript(SCHEMA)
         db.executemany("INSERT INTO meta VALUES (?, ?)", {"format": FORMAT, **meta}.items())
-        for art in artworks:
-            fp = art.fingerprint
-            db.execute(
-                "INSERT INTO artworks VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (art.artwork_id, art.layout, meta.get("source", ""), art.source_url, fp.phash,
-                 fp.keypoints.astype(np.float16).tobytes(), fp.descriptors.tobytes()),
-            )
-            db.executemany(
-                "INSERT INTO printings VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [(art.artwork_id, p.lang, p.set_id, p.set_total, p.number, p.card_id, p.name)
-                 for p in art.printings],
-            )
+        db.executemany(
+            "INSERT INTO artworks VALUES (?, ?, ?, ?, ?, ?)",
+            [(a.key, a.layout, meta.get("source", ""), a.source_url,
+              a.fingerprint.keypoints.astype(np.float16).tobytes(),
+              a.fingerprint.descriptors.tobytes()) for a in artworks],
+        )
+        db.executemany(
+            "INSERT INTO printings VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(key, p.lang, p.set_id, p.set_total, p.number, p.card_id, p.name)
+             for key, p in printings],
+        )
     db.close()
     partial.replace(path)
 
 
-def read_pool(path: Path) -> Pool:
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+def read_edition(path: Path) -> tuple[dict[str, str], list[Artwork], list[tuple[str, Printing]]]:
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
         meta = dict(db.execute("SELECT key, value FROM meta"))
         if meta.get("format") != FORMAT:
-            raise ValueError(f"{path.name}: format {meta.get('format')}, expected {FORMAT}")
-        artworks = {
-            row[0]: Artwork(
-                artwork_id=row[0], layout=row[1], source_url=row[2],
-                fingerprint=Fingerprint(
-                    phash=row[3],
-                    keypoints=np.frombuffer(row[4], np.float16).astype(np.float32).reshape(-1, 2),
-                    descriptors=np.frombuffer(row[5], np.uint8).reshape(-1, 32),
-                ),
-            )
-            for row in db.execute(
-                "SELECT artwork_id, layout, source_url, phash, keypoints, descriptors"
-                " FROM artworks"
-            )
-        }
-        for row in db.execute(
-            "SELECT artwork_id, lang, set_id, set_total, number, card_id, name FROM printings"
-        ):
-            artworks[row[0]].printings.append(Printing(*row[1:]))
-    db.close()
-    count = meta.get("official_count")
-    return Pool(meta["set_id"], int(count) if count else None, list(artworks.values()))
+            raise ValueError(f"format {meta.get('format')}, expected {FORMAT}")
+        artworks = [
+            Artwork(key, layout, url, Fingerprint(
+                np.frombuffer(points, np.float16).astype(np.float32).reshape(-1, 2),
+                np.frombuffer(descriptors, np.uint8).reshape(-1, 32)))
+            for key, layout, url, points, descriptors in db.execute(
+                "SELECT artwork_key, layout, source_url, keypoints, descriptors FROM artworks")
+        ]
+        printings = [(row[0], Printing(*row[1:])) for row in db.execute(
+            "SELECT artwork_key, lang, set_id, set_total, number, card_id, name FROM printings")]
+    finally:
+        db.close()
+    return meta, artworks, printings
 
 
-_pools: dict[Path, tuple[float, Pool]] = {}
-_pools_lock = threading.Lock()
+_files: dict[Path, tuple[float, tuple]] = {}
+_library: tuple[tuple, list[Artwork]] | None = None
+_lock = threading.Lock()
 
 
-def pools(folder: Path | None = None) -> list[Pool]:
-    """Every edition with fingerprints (in POOLS), read once (again if its file changes)."""
+def library(folder: Path | None = None) -> list[Artwork]:
+    """Every edition's illustrations, each with all its printings (POOLS by default).
+
+    Files are read once, again when they change. A printing whose illustration
+    is in no file found (its first edition's file is missing) is left out.
+    """
+    global _library
     folder = POOLS if folder is None else folder
-    found = []
-    with _pools_lock:
+    with _lock:
+        state = []
         for path in sorted(folder.glob("*.sqlite")):
             mtime = path.stat().st_mtime
-            cached = _pools.get(path)
-            if cached is None or cached[0] != mtime:
+            if path not in _files or _files[path][0] != mtime:
                 try:
-                    _pools[path] = (mtime, read_pool(path))
+                    _files[path] = (mtime, read_edition(path))
                 except (sqlite3.Error, ValueError, KeyError) as error:
                     log.warning("Fingerprints %s not usable: %s", path.name, error)
                     continue
-            found.append(_pools[path][1])
-    return found
+            state.append((path, mtime))
+        state = tuple(state)
+        if _library is None or _library[0] != state:
+            artworks: dict[str, Artwork] = {}
+            for path, _ in state:
+                for art in _files[path][1][1]:
+                    artworks[art.key] = Artwork(art.key, art.layout, art.source_url,
+                                                art.fingerprint)
+            for path, _ in state:
+                for key, printing in _files[path][1][2]:
+                    if key in artworks:
+                        artworks[key].printings.append(printing)
+                    else:
+                        log.warning("%s: %s links to %s, in no file", path.name,
+                                    printing.card_id, key)
+            _library = (state, [a for a in artworks.values() if a.printings])
+        return _library[1]
 
 
 # ---------------------------------------------------------------------------
@@ -325,28 +346,27 @@ def pools(folder: Path | None = None) -> list[Pool]:
 @dataclass
 class Match:
     artwork: Artwork
-    printings: list[Printing]  # of the editions searched
+    printings: list[Printing]  # those searched
     inliers: int
     runner_up: int  # the next illustration's inliers
-    distance: int  # perceptual hash distance (0-64), for the record
 
 
-def best_match(card: np.ndarray, editions: list[Pool], total: int | None = None,
+def best_match(card: np.ndarray, artworks: list[Artwork], keep: Callable[[Printing], bool],
                min_inliers: int = MIN_INLIERS) -> Match | None:
-    """The illustration of these editions the straightened card shows, if clearly one.
+    """The illustration the straightened card shows, if clearly one.
 
-    `total`: only printings of an edition of that size are returned.
+    Only illustrations with a printing `keep` accepts are compared (e.g. those
+    printed with the set size read), and only those printings returned.
     """
     photo: dict[str, Fingerprint] = {}  # per layout
     scored: list[tuple[int, Artwork, list[Printing]]] = []
-    for pool in editions:
-        for art in pool.artworks:
-            printings = [p for p in art.printings if total is None or p.set_total == total]
-            if not printings:
-                continue
-            if art.layout not in photo:
-                photo[art.layout] = fingerprint(card, art.layout)
-            scored.append((agreement(photo[art.layout], art.fingerprint), art, printings))
+    for art in artworks:
+        printings = [p for p in art.printings if keep(p)]
+        if not printings:
+            continue
+        if art.layout not in photo:
+            photo[art.layout] = fingerprint(card, art.layout)
+        scored.append((agreement(photo[art.layout], art.fingerprint), art, printings))
     if not scored:
         return None
     scored.sort(key=lambda s: s[0], reverse=True)
@@ -354,5 +374,4 @@ def best_match(card: np.ndarray, editions: list[Pool], total: int | None = None,
     runner_up = scored[1][0] if len(scored) > 1 else 0
     if inliers < min_inliers or inliers < MIN_MARGIN * runner_up:
         return None
-    distance = hamming(photo[art.layout].phash, art.fingerprint.phash)
-    return Match(art, printings, inliers, runner_up, distance)
+    return Match(art, printings, inliers, runner_up)

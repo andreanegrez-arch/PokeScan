@@ -183,6 +183,16 @@ def search_by_code(
     return []
 
 
+FIND_BY_IDS = """
+SELECT u.card_id, u.rank FROM unnest(%(ids)s::text[]) WITH ORDINALITY AS u(card_id, rank)
+"""
+
+
+def summaries_of(conn: psycopg.Connection, card_ids: list[str], lang: Lang) -> list[CardSummary]:
+    """These cards, in this order (ids not in the catalog are left out)."""
+    return _summaries(conn, FIND_BY_IDS, {"ids": card_ids, "lang": lang})
+
+
 def search_by_name(
     conn: psycopg.Connection, text: str, lang: Lang, limit: int
 ) -> list[CardSummary]:

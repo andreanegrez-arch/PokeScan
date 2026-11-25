@@ -54,17 +54,33 @@ def straightened(image: np.ndarray) -> np.ndarray:
     return card
 
 
-def entry(artwork_id: int, drawing: int, card_id: str, number: str,
-          total: int = 102) -> artwork.Artwork:
-    set_id = card_id.split("-")[0]
-    printings = [artwork.Printing("en", set_id, total, number, card_id, f"Card {number}")]
-    return artwork.Artwork(artwork_id, LAYOUT, f"https://example.test/{card_id}.png",
-                           artwork.fingerprint(drawn_card(drawing), LAYOUT), printings)
+def drawn(drawing: int, key: str, layout: str = LAYOUT) -> artwork.Artwork:
+    return artwork.Artwork(key, layout, f"https://example.test/{key}.png",
+                           artwork.fingerprint(drawn_card(drawing), layout))
 
 
-def save(folder, set_id: str, artworks: list[artwork.Artwork], total: int = 102) -> None:
-    meta = {"set_id": set_id, "official_count": str(total), "source": "drawn"}
-    artwork.write_pool(folder / f"{set_id}.sqlite", meta, artworks)
+def printing(card_id: str, number: str, total: str = "102", lang: str = "en",
+             name: str | None = None) -> artwork.Printing:
+    return artwork.Printing(lang, card_id.split("-")[0], total, number, card_id,
+                            name or f"Card {number}")
+
+
+def save(folder, set_id: str, artworks: list[artwork.Artwork],
+         printings: list[tuple[str, artwork.Printing]], total: str = "102") -> None:
+    meta = {"set_id": set_id, "official_count": total, "source": "drawn"}
+    artwork.write_edition(folder / f"{set_id}.sqlite", meta, artworks, printings)
+
+
+def edition(folder, set_id: str, cards: list[tuple[int, str]], total: str = "102") -> None:
+    """An edition that printed each drawing first, as (drawing, number)."""
+    keys = [artwork.artwork_key(set_id, number) for _, number in cards]
+    save(folder, set_id, [drawn(drawing, key) for (drawing, _), key in zip(cards, keys)],
+         [(key, printing(f"{set_id}-{number}", number, total))
+          for (_, number), key in zip(cards, keys)], total)
+
+
+def everything(_: artwork.Printing) -> bool:
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -88,68 +104,106 @@ def test_the_printed_text_is_not_in_the_fingerprint():
     english = artwork.fingerprint(drawn_card(7, "14/102", "Raichu"), LAYOUT)
     italian = artwork.fingerprint(drawn_card(7, "14/102", "Raichu PV 80"), LAYOUT)
 
-    assert english.phash == italian.phash
     assert np.array_equal(english.descriptors, italian.descriptors)
 
 
-def test_the_perceptual_hash_is_64_bits():
+def test_a_fingerprint_keeps_at_most_the_set_number_of_keypoints():
     fingerprint = artwork.fingerprint(drawn_card(7), LAYOUT)
 
-    assert len(fingerprint.phash) == 8
-    assert artwork.hamming(fingerprint.phash, fingerprint.phash) == 0
+    assert 0 < len(fingerprint.keypoints) == len(fingerprint.descriptors) <= artwork.FEATURES
 
 
 def test_layouts_are_known_by_era_and_category():
     assert artwork.layout_for("base", "Pokemon") == "wizards-pokemon"
     assert artwork.layout_for("neo", "Trainer") == "wizards-trainer"
+    assert artwork.layout_for("ecard", "Energy") == "ecard-energy"
+    assert artwork.layout_for("hgss", "Pokemon", "Rare PRIME") == "hgss-pokemon"
+    assert artwork.layout_for("hgss", "Pokemon", "LEGEND") == "hgss-legend"
+    assert artwork.layout_for("base", "Pokemon", "LEGEND") is None  # no such card
     assert artwork.layout_for("sv", "Pokemon") is None  # not measured yet
 
 
+@pytest.mark.parametrize(("a", "b", "same"), [
+    ("025", "25", True), ("H01", "H1", True), ("102", "0102", True),
+    ("14", "4", False), ("H32", "32", False), (None, "102", False),
+])
+def test_numbers_are_compared_without_zero_padding(a, b, same):
+    assert artwork.same_number(a, b) is same
+
+
 # ---------------------------------------------------------------------------
-# Editions
+# Editions' files
 # ---------------------------------------------------------------------------
 
 
 def test_an_edition_file_keeps_fingerprints_and_printings(fingerprints):
-    art = entry(1, 7, "old1-14", "14")
-    art.printings.append(artwork.Printing("it", "old1", 102, "14", "old1-14", "Raichu"))
-    save(fingerprints, "old1", [art])
+    art = drawn(7, "old1/14")
+    save(fingerprints, "old1", [art], [("old1/14", printing("old1-14", "14")),
+                                       ("old1/14", printing("old1-14", "14", lang="it",
+                                                            name="Raichu"))])
 
-    (pool,) = artwork.pools()
+    (read,) = artwork.library()
 
-    assert (pool.set_id, pool.official_count, pool.totals) == ("old1", 102, {102})
-    (read,) = pool.artworks
-    assert read.layout == LAYOUT and read.source_url == art.source_url
-    assert [(p.lang, p.card_id, p.name) for p in read.printings] == [
-        ("en", "old1-14", "Card 14"), ("it", "old1-14", "Raichu")]
-    assert read.fingerprint.phash == art.fingerprint.phash
+    assert (read.key, read.layout, read.source_url) == ("old1/14", LAYOUT, art.source_url)
+    assert [(p.lang, p.card_id, p.set_total, p.name) for p in read.printings] == [
+        ("en", "old1-14", "102", "Card 14"), ("it", "old1-14", "102", "Raichu")]
     assert np.array_equal(read.fingerprint.descriptors, art.fingerprint.descriptors)
     assert np.allclose(read.fingerprint.keypoints, art.fingerprint.keypoints, atol=0.25)
 
 
+def test_a_reprint_links_to_the_illustration_of_its_first_edition(fingerprints):
+    edition(fingerprints, "old1", [(7, "14")])
+    # old3 reprinted it as 20/130, with no illustration of its own.
+    save(fingerprints, "old3", [], [("old1/14", printing("old3-20", "20", "130"))], "130")
+
+    (read,) = artwork.library()
+
+    assert [(p.card_id, p.number, p.set_total) for p in read.printings] == [
+        ("old1-14", "14", "102"), ("old3-20", "20", "130")]
+
+
+def test_a_printing_whose_illustration_is_in_no_file_is_left_out(fingerprints):
+    save(fingerprints, "old3", [], [("old1/14", printing("old3-20", "20", "130"))], "130")
+
+    assert artwork.library() == []
+
+
+def test_a_new_file_is_read_without_restarting(fingerprints):
+    edition(fingerprints, "old1", [(7, "14")])
+    assert len(artwork.library()) == 1
+
+    edition(fingerprints, "old2", [(11, "58")])
+
+    assert [a.key for a in artwork.library()] == ["old1/14", "old2/58"]
+
+
 def test_a_file_of_another_format_is_left_out(fingerprints):
-    save(fingerprints, "old1", [entry(1, 7, "old1-14", "14")])
+    edition(fingerprints, "old1", [(7, "14")])
     with sqlite3.connect(fingerprints / "old1.sqlite") as db:
         db.execute("UPDATE meta SET value = '0' WHERE key = 'format'")
     db.close()
 
-    assert artwork.pools() == []
+    assert artwork.library() == []
 
 
 def test_a_match_must_stand_out_from_the_next_illustration(fingerprints):
     # The same drawing twice in the edition: no way to tell which card it is.
-    save(fingerprints, "old1", [entry(1, 7, "old1-14", "14"), entry(2, 7, "old1-15", "15")])
+    edition(fingerprints, "old1", [(7, "14"), (7, "15")])
     card = straightened(photo(drawn_card(7)))
 
-    assert artwork.best_match(card, artwork.pools(), 102) is None
+    assert artwork.best_match(card, artwork.library(), everything) is None
 
 
-def test_only_printings_of_the_size_read_are_matched(fingerprints):
-    save(fingerprints, "old1", [entry(1, 7, "old1-14", "14")])
+def test_only_the_printings_kept_are_matched(fingerprints):
+    edition(fingerprints, "old1", [(7, "14")])
     card = straightened(photo(drawn_card(7)))
 
-    assert artwork.best_match(card, artwork.pools(), 64) is None
-    assert artwork.best_match(card, artwork.pools(), 102).printings[0].card_id == "old1-14"
+    def sized(total):
+        return lambda p: artwork.same_number(p.set_total, total)
+
+    assert artwork.best_match(card, artwork.library(), sized("64")) is None
+    match = artwork.best_match(card, artwork.library(), sized("102"))
+    assert [p.card_id for p in match.printings] == ["old1-14"]
 
 
 # ---------------------------------------------------------------------------
@@ -170,8 +224,8 @@ def catalog(db):
 
 @pytest.fixture
 def old_sets(fingerprints):
-    save(fingerprints, "old1", [entry(1, 7, "old1-14", "14"), entry(2, 9, "old1-58", "58")])
-    save(fingerprints, "old2", [entry(1, 11, "old2-58", "58")])
+    edition(fingerprints, "old1", [(7, "14"), (9, "58")])
+    edition(fingerprints, "old2", [(11, "58")])
 
 
 def test_the_illustration_corrects_a_misread_number(catalog, old_sets):
@@ -215,6 +269,17 @@ def test_without_any_code_the_illustration_alone_finds_the_card(catalog, old_set
 def test_the_edition_chosen_by_the_user_is_searched_whatever_size_is_read(catalog, old_sets):
     # 58/64: a misread size; the user said it's old2.
     result = identify(catalog, photo(drawn_card(11, "58/64", "Pikachu")), "it", set_id="old2")
+
+    assert result.status == "matched"
+    assert result.match.card_id == "old2-58"
+
+
+def test_the_number_read_picks_the_printing_of_a_reprinted_illustration(catalog, fingerprints):
+    # One drawing printed as old1's 14 and old2's 58, both /102: 58 was read.
+    edition(fingerprints, "old1", [(7, "14"), (9, "58")])
+    save(fingerprints, "old2", [], [("old1/14", printing("old2-58", "58"))])
+
+    result = identify(catalog, photo(drawn_card(7, "58/102", "Pikachu")), "it")
 
     assert result.status == "matched"
     assert result.match.card_id == "old2-58"
