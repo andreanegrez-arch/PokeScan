@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from app.recognition import artwork
-from jobs.build_fingerprints import Card, _first_printing, glare, printed_total
+from jobs.build_fingerprints import REPRINT_INLIERS, Card, _first_printing, glare, printed_total
 from tests.test_artwork import LAYOUT, drawn_card
 
 
@@ -50,7 +50,7 @@ def test_the_same_illustration_with_the_same_name_is_a_reprint():
 
     first, inliers = _first_printing(reprint(), fingerprint, known)
 
-    assert first is known[0] and inliers >= 40
+    assert first is known[0] and inliers >= REPRINT_INLIERS
 
 
 @pytest.mark.parametrize(("drawing", "name", "layout"), [

@@ -54,9 +54,18 @@ WORKERS = 4
 RETRIES = 4
 RETRY_WAIT = 10  # seconds, times the attempt
 
-# Two pictures of one illustration (scanned for two editions) agree on far
-# more keypoints than two illustrations of the same Pokémon.
-REPRINT_INLIERS = 40
+# A reprint links to the illustration only when the two pictures are nearly
+# alike. Two illustrations of the same Pokémon never agree on more than 4
+# keypoints (343 pairs, Wizards era); one illustration printed twice agrees on
+# 7 to 358, low between a holo and its non-holo. Measured on simulated photos
+# of such pairs: up to 80, separate fingerprints recognize the very printing
+# more often than one shared fingerprint recognizes the illustration (and
+# never the other one); above, the shared fingerprint does better.
+REPRINT_INLIERS = 80
+
+# Plain tables (BGR) under the --check photos: the check is about the
+# fingerprints, not about finding the card on a busy background.
+TABLES = [(60, 90, 60), (40, 60, 90), (90, 90, 90), (35, 35, 45), (150, 160, 170)]
 
 CARDS = """
 SELECT c.card_id, c.set_id, c.local_number, c.category, c.rarity, s.series_id, s.official_count,
@@ -224,7 +233,7 @@ def build(cards: list[Card], out: Path, client: httpx.Client, folder: Path,
             log.info("%s reprints %s (%d keypoints agree)", card.card_id, key, inliers)
         else:
             if inliers >= artwork.MIN_INLIERS:
-                log.warning("%s: like an illustration of the same name (%d keypoints agree),"
+                log.info("%s: like an illustration of the same name (%d keypoints agree),"
                             " kept as its own", card.card_id, inliers)
             key = artwork.artwork_key(set_id, card.number)
             art = artwork.Artwork(key, card.layout, card.url, fingerprint)
@@ -237,7 +246,9 @@ def build(cards: list[Card], out: Path, client: httpx.Client, folder: Path,
             first.printings.append(printing)
             report.names[lang] = report.names.get(lang, 0) + 1
         if index in tested:
-            tests.append((card, make_photo(glare(picture, rng), rng, turn=0)))
+            table = TABLES[int(rng.integers(len(TABLES)))]
+            tests.append((card, make_photo(glare(picture, rng), rng, turn=0,
+                                           background=table)))
 
     path = out / f"{set_id}.sqlite"
     official = next((c.total for c in cards if c.total and c.total.isdigit()), "")
@@ -253,6 +264,18 @@ def build(cards: list[Card], out: Path, client: httpx.Client, folder: Path,
     return report
 
 
+def _views(photo: np.ndarray):
+    """The card straightened as a scan does: from its outline, from the outline
+    enlarged (an inner frame taken for it), then the photo taken as the card."""
+    corners = detect.find_outline(photo)
+    if corners is not None:
+        yield detect.straighten(photo, corners)
+        yield detect.straighten(photo, detect.enlarge(corners))
+    card = detect.as_card(photo)
+    if card is not None:
+        yield card
+
+
 def check(tests: list[tuple[Card, bytes]], library: list[artwork.Artwork],
           reports: dict[str, Report]) -> None:
     """Recognize the test photos: with the set size known, then anywhere."""
@@ -260,14 +283,14 @@ def check(tests: list[tuple[Card, bytes]], library: list[artwork.Artwork],
         return lambda p: artwork.same_number(p.set_total, total)
 
     for card, jpeg in tests:
-        straight = detect.find_card(detect.decode(jpeg))
+        views = list(_views(detect.decode(jpeg)))
         modes = {"size known": (keep_size(card.total), artwork.MIN_INLIERS),
                  "anywhere": (lambda p: True, artwork.MIN_INLIERS_ANYWHERE)}
         for mode, (keep, minimum) in modes.items():
             if mode == "size known" and card.total is None:
                 continue
-            match = (artwork.best_match(straight, library, keep, minimum)
-                     if straight is not None else None)
+            match = next((m for view in views
+                          if (m := artwork.best_match(view, library, keep, minimum))), None)
             outcome = (2 if match is None
                        else 0 if card.card_id in {p.card_id for p in match.printings} else 1)
             counts = reports[card.set_id].checks.setdefault(mode, [0, 0, 0])
@@ -277,7 +300,7 @@ def check(tests: list[tuple[Card, bytes]], library: list[artwork.Artwork],
                             match.printings[0].card_id)
             elif outcome == 2:
                 log.info("check %s (%s): not recognized%s", card.card_id, mode,
-                         "" if straight is not None else " (card not found in the photo)")
+                         "" if views else " (card not found in the photo)")
 
 
 def summary(reports: list[Report]) -> str:
