@@ -499,6 +499,7 @@ def check(photos: Path, library: list[artwork.Artwork],
     listed = photos / "photos.jsonl"
     entries = ([json.loads(line) for line in listed.read_text(encoding="utf-8").splitlines()]
                if listed.exists() else [])
+    entries = list({e["card_id"]: e for e in entries}.values())  # an edition built again
     for entry in entries:
         card_id, set_id, total = entry["card_id"], entry["set_id"], entry["total"]
         report = reports.setdefault(set_id, Report(set_id))
