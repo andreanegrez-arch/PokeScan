@@ -19,13 +19,19 @@ made by jobs/build_fingerprints.py (see SCHEMA). A reprint's file lists its
 printings, linked to the illustration kept in the file of the edition that
 printed it first. Which illustrations are compared: those printed with the
 set size OCR read (/102: Base Set and Triumphant), or in the edition the user
-chose; all of them only when nothing at all was read.
+chose; all of them only when nothing at all was read, and then only the
+SHORTLIST an index of visual words finds most alike (Shortlist).
+
+Only the index and the printings stay in memory; a fingerprint is read from
+its file when compared, the LOADED last read kept.
 """
 
+import hashlib
 import logging
 import re
 import sqlite3
 import threading
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,10 +39,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.recognition.detect import CARD_SIZE
+
 log = logging.getLogger(__name__)
 
 POOLS = Path(__file__).resolve().parents[2] / "fingerprints"
-FORMAT = "2"
+FORMAT = "3"
 
 # Where the illustration is, as fractions of the straightened card (left, top,
 # right, bottom). A little inside the frame: a photo straightened a few pixels
@@ -56,12 +64,30 @@ LAYOUTS = {
     "hgss-energy": (0.04, 0.09, 0.96, 0.68),
     # Half of a LEGEND: the picture runs nearly edge to edge, the text on it.
     "hgss-legend": (0.12, 0.06, 0.95, 0.94),
+    # EX (Ruby & Sapphire to Power Keepers), the ex and Star cards too.
+    "ex-pokemon": (0.10, 0.11, 0.90, 0.45),
+    "ex-trainer": (0.11, 0.15, 0.89, 0.47),
+    "ex-energy": (0.08, 0.12, 0.92, 0.65),
+    # Diamond & Pearl and Platinum, LV.X too.
+    "dp-pokemon": (0.09, 0.13, 0.91, 0.48),
+    "dp-trainer": (0.10, 0.17, 0.89, 0.49),
+    "dp-energy": (0.08, 0.12, 0.92, 0.65),
+    # Black & White and XY: one frame.
+    "bw-pokemon": (0.10, 0.12, 0.90, 0.48),
+    "bw-trainer": (0.10, 0.18, 0.90, 0.50),
+    "bw-energy": (0.08, 0.15, 0.92, 0.60),
+    # Evolutions (XY): Base Set's frame redrawn, a larger picture than Base Set's.
+    "evolutions-pokemon": (0.10, 0.09, 0.90, 0.46),
+    "evolutions-trainer": (0.11, 0.24, 0.89, 0.55),
+    "evolutions-energy": (0.08, 0.15, 0.92, 0.70),
+    # Sun & Moon to Mega Evolution: one frame, within a point or two.
+    "modern-pokemon": (0.08, 0.10, 0.92, 0.46),
+    "modern-trainer": (0.08, 0.16, 0.92, 0.51),
+    "modern-energy": (0.04, 0.13, 0.96, 0.63),
 }
-# TCGdex series -> era (the prefix of the layouts above).
-SERIES_ERAS = {"base": "wizards", "gym": "wizards", "neo": "wizards", "lc": "wizards",
-               "ecard": "ecard", "hgss": "hgss"}
-CATEGORY_LAYOUTS = {"Pokemon": "pokemon", "Trainer": "trainer", "Energy": "energy"}
-RARITY_LAYOUTS = {"LEGEND": "legend"}  # cards whose box isn't their category's
+# Full-art cards (ex, GX, V, illustration rares, full-art trainers) have the
+# picture over the whole card: their era's box is used, the part of the
+# picture with the least text on it (the name above, the attacks below).
 
 ART_WIDTH = 480  # the box is resized to this width before fingerprinting
 DETAIL_SIGMA = 6  # px: shading broader than this is left out of the fingerprint
@@ -86,9 +112,24 @@ MIN_INLIERS = 12
 MIN_MARGIN = 2.0
 MIN_INLIERS_ANYWHERE = 20  # searching every edition: stricter
 
+# Comparing a photo with every illustration takes ~2 ms each: too slow for
+# all of them (some 20,000) when no code was read. An index picks the few
+# most alike first (Shortlist): each keypoint is given the nearest of
+# VOCABULARY_SIZE reference descriptors (its "visual word") and its place in
+# the box (a SHORTLIST_GRID x SHORTLIST_GRID grid); illustrations sharing the
+# photo's rarest words, in the same places, come first. On 100 simulated
+# photos against the 1,523 Wizards-era illustrations, the right one ranked
+# first 95 times, never below 8th (4,096 words or a 3 x 3 grid: 99 first,
+# but one photo straightened a little off ranked 913th).
+VOCABULARY = "vocabulary.bin"  # in the fingerprints' folder: VOCABULARY_SIZE x 32 bytes
+VOCABULARY_SIZE = 2048
+SHORTLIST_GRID = 2
+SHORTLIST = 100  # illustrations compared, at most, when more are searched
+LOADED = 4000  # fingerprints kept in memory; the others are read when needed
+
 SCHEMA = """
 CREATE TABLE meta (
-    key    TEXT PRIMARY KEY,   -- format, set_id, official_count, source, built_at
+    key    TEXT PRIMARY KEY,   -- format, set_id, official_count, source, built_at, vocabulary
     value  TEXT NOT NULL
 );
 
@@ -102,7 +143,9 @@ CREATE TABLE artworks (
     source       TEXT NOT NULL,     -- where the picture came from, e.g. 'pokemontcg.io'
     source_url   TEXT NOT NULL,     -- the picture, for a preview loaded from there
     keypoints    BLOB NOT NULL,     -- float16 x, y per keypoint, in the box at ART_WIDTH
-    descriptors  BLOB NOT NULL      -- 32 bytes per keypoint (ORB)
+    descriptors  BLOB NOT NULL,     -- 32 bytes per keypoint (ORB)
+    words        BLOB NOT NULL      -- uint16 per keypoint: its visual word; empty without
+                                    -- a vocabulary (meta 'vocabulary': which one)
 );
 
 -- This edition's printed cards, in each language the edition was printed in.
@@ -142,15 +185,6 @@ CREATE TABLE unofficial_names (
 class Fingerprint:
     keypoints: np.ndarray  # (n, 2) float32
     descriptors: np.ndarray  # (n, 32) uint8
-
-
-def layout_for(series_id: str | None, category: str | None,
-               rarity: str | None = None) -> str | None:
-    """The layout of a card's illustration; None for eras not measured yet."""
-    era = SERIES_ERAS.get(series_id or "")
-    kind = RARITY_LAYOUTS.get(rarity or "") or CATEGORY_LAYOUTS.get(category or "")
-    layout = f"{era}-{kind}" if era and kind else None
-    return layout if layout in LAYOUTS else None
 
 
 def box(card: np.ndarray, layout: str) -> np.ndarray:
@@ -219,6 +253,98 @@ def agreement(photo: Fingerprint, picture: Fingerprint) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Visual words, for the shortlist
+# ---------------------------------------------------------------------------
+
+
+def read_vocabulary(folder: Path) -> np.ndarray | None:
+    """The reference descriptors of the fingerprints in `folder`, if it has them."""
+    path = folder / VOCABULARY
+    if not path.exists():
+        return None
+    return np.frombuffer(path.read_bytes(), np.uint8).reshape(-1, 32)
+
+
+def vocabulary_id(vocabulary: np.ndarray | None) -> str:
+    """What a file's words were given with (meta 'vocabulary'): '' for none."""
+    if vocabulary is None:
+        return ""
+    return hashlib.sha1(vocabulary.tobytes()).hexdigest()[:16]
+
+
+def words(descriptors: np.ndarray, vocabulary: np.ndarray) -> np.ndarray:
+    """Each keypoint's visual word: the nearest reference descriptor (uint16)."""
+    if len(descriptors) == 0:
+        return np.zeros(0, np.uint16)
+    matches = cv2.BFMatcher(cv2.NORM_HAMMING).match(descriptors, vocabulary)
+    found = np.zeros(len(descriptors), np.uint16)
+    found[[m.queryIdx for m in matches]] = [m.trainIdx for m in matches]
+    return found
+
+
+def terms(keypoints: np.ndarray, found: np.ndarray, layout: str) -> np.ndarray:
+    """The distinct (place, word) pairs of an illustration, as numbers."""
+    if len(found) == 0:
+        return np.zeros(0, np.int64)
+    width, height = _box_size(layout)
+    column = np.clip((keypoints[:, 0] / width * SHORTLIST_GRID).astype(int), 0, SHORTLIST_GRID - 1)
+    row = np.clip((keypoints[:, 1] / height * SHORTLIST_GRID).astype(int), 0, SHORTLIST_GRID - 1)
+    place = row * SHORTLIST_GRID + column
+    return np.unique(place.astype(np.int64) * VOCABULARY_SIZE + found)
+
+
+def _box_size(layout: str) -> tuple[float, float]:
+    """The box's width and height once resized to ART_WIDTH (see box)."""
+    left, top, right, bottom = LAYOUTS[layout]
+    card_width, card_height = CARD_SIZE
+    return ART_WIDTH, ART_WIDTH * (bottom - top) * card_height / ((right - left) * card_width)
+
+
+class Shortlist:
+    """Illustrations ranked by the visual words they share with a photo (TF-IDF).
+
+    Words are compared only between the photo's box and illustrations of the
+    same layout. `slots[i]` is the i-th illustration indexed.
+    """
+
+    def __init__(self, layouts: list[str], documents: list[tuple[str, np.ndarray]],
+                 vocabulary: np.ndarray):
+        self.vocabulary = vocabulary
+        self.layouts = {layout: i for i, layout in enumerate(layouts)}
+        span = SHORTLIST_GRID * SHORTLIST_GRID * VOCABULARY_SIZE
+        keys = [self.layouts[layout] * span + found for layout, found in documents]
+        sizes = np.array([len(k) for k in keys])
+        every = np.concatenate(keys) if keys else np.zeros(0, np.int64)
+        owners = np.repeat(np.arange(len(keys), dtype=np.int32), sizes)
+        order = np.argsort(every, kind="stable")
+        self.owners = owners[order]
+        total = len(self.layouts) * span
+        self.starts = np.searchsorted(every[order], np.arange(total + 1))
+        frequency = np.diff(self.starts)
+        self.idf = np.log((len(keys) + 1) / (frequency + 1)).astype(np.float32)
+        self.norms = np.array([np.sqrt((self.idf[k] ** 2).sum()) for k in keys], np.float32)
+        self.span, self.size = span, len(keys)
+
+    def scores(self, photo: dict[str, Fingerprint]) -> np.ndarray:
+        """How alike each illustration indexed is to the photo (per layout's box)."""
+        scores = np.zeros(self.size, np.float32)
+        for layout, fingerprint in photo.items():
+            if layout not in self.layouts:
+                continue
+            asked = (self.layouts[layout] * self.span
+                     + terms(fingerprint.keypoints, words(fingerprint.descriptors,
+                                                         self.vocabulary), layout))
+            if len(asked) == 0:
+                continue
+            weight = self.idf[asked] ** 2
+            lengths = self.starts[asked + 1] - self.starts[asked]
+            found = np.concatenate([self.owners[self.starts[k]:self.starts[k + 1]] for k in asked])
+            scores += (np.bincount(found, weights=np.repeat(weight, lengths), minlength=self.size)
+                       / (np.sqrt(weight.sum()) + 1e-9)).astype(np.float32)
+        return scores / (self.norms + 1e-9)
+
+
+# ---------------------------------------------------------------------------
 # Editions' files
 # ---------------------------------------------------------------------------
 
@@ -233,13 +359,25 @@ class Printing:
     name: str
 
 
-@dataclass
+@dataclass(eq=False)
 class Artwork:
     key: str  # '<set_id>/<number>' of its first printing
     layout: str
     source_url: str
-    fingerprint: Fingerprint
+    stored: Fingerprint | None = None  # None: read from `file` when needed
     printings: list[Printing] = field(default_factory=list)
+    file: Path | None = None
+    slot: int | None = None  # its place in the library's Shortlist
+
+    @property
+    def fingerprint(self) -> Fingerprint:
+        return self.stored if self.stored is not None else loaded([self])[0]
+
+
+class Library(list):
+    """The illustrations of every edition, with the index to shortlist them."""
+
+    shortlist: Shortlist | None = None
 
 
 def artwork_key(set_id: str, number: str) -> str:
@@ -254,21 +392,28 @@ def same_number(a: str | None, b: str | None) -> bool:
 
 
 def write_edition(path: Path, meta: dict[str, str], artworks: list[Artwork],
-                  printings: list[tuple[str, Printing]]) -> None:
-    """Save an edition: the illustrations it printed first, and every printing
-    of it as (artwork key, printing). The file is replaced only once complete."""
+                  printings: list[tuple[str, Printing]],
+                  vocabulary: np.ndarray | None = None) -> None:
+    """Save an edition: the illustrations it printed first (with their visual
+    words, given a vocabulary), and every printing of it as (artwork key,
+    printing). The file is replaced only once complete."""
     partial = path.with_suffix(".part")
     partial.unlink(missing_ok=True)
     db = sqlite3.connect(partial)
     with db:
         db.executescript(SCHEMA)
-        db.executemany("INSERT INTO meta VALUES (?, ?)", {"format": FORMAT, **meta}.items())
-        db.executemany(
-            "INSERT INTO artworks VALUES (?, ?, ?, ?, ?, ?)",
-            [(a.key, a.layout, meta.get("source", ""), a.source_url,
-              a.fingerprint.keypoints.astype(np.float16).tobytes(),
-              a.fingerprint.descriptors.tobytes()) for a in artworks],
-        )
+        db.executemany("INSERT INTO meta VALUES (?, ?)",
+                       {**meta, "format": FORMAT,
+                        "vocabulary": vocabulary_id(vocabulary)}.items())
+        rows = []
+        for a in artworks:
+            taken = a.fingerprint
+            found = (words(taken.descriptors, vocabulary) if vocabulary is not None
+                     else np.zeros(0, np.uint16))
+            rows.append((a.key, a.layout, meta.get("source", ""), a.source_url,
+                         taken.keypoints.astype(np.float16).tobytes(),
+                         taken.descriptors.tobytes(), found.astype(np.uint16).tobytes()))
+        db.executemany("INSERT INTO artworks VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
         db.executemany(
             "INSERT INTO printings VALUES (?, ?, ?, ?, ?, ?, ?)",
             [(key, p.lang, p.set_id, p.set_total, p.number, p.card_id, p.name)
@@ -278,65 +423,167 @@ def write_edition(path: Path, meta: dict[str, str], artworks: list[Artwork],
     partial.replace(path)
 
 
-def read_edition(path: Path) -> tuple[dict[str, str], list[Artwork], list[tuple[str, Printing]]]:
+def _decoded(points: bytes, descriptors: bytes) -> Fingerprint:
+    return Fingerprint(np.frombuffer(points, np.float16).astype(np.float32).reshape(-1, 2),
+                       np.frombuffer(descriptors, np.uint8).reshape(-1, 32))
+
+
+def _open(path: Path, formats: tuple[str, ...]) -> tuple[sqlite3.Connection, dict[str, str]]:
     db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    meta = dict(db.execute("SELECT key, value FROM meta"))
+    if meta.get("format") not in formats:
+        db.close()
+        raise ValueError(f"format {meta.get('format')}, expected {FORMAT}")
+    return db, meta
+
+
+def _printings(db: sqlite3.Connection) -> list[tuple[str, Printing]]:
+    return [(row[0], Printing(*row[1:])) for row in db.execute(
+        "SELECT artwork_key, lang, set_id, set_total, number, card_id, name FROM printings")]
+
+
+def read_edition(path: Path, formats: tuple[str, ...] = (FORMAT,)
+                 ) -> tuple[dict[str, str], list[Artwork], list[tuple[str, Printing]]]:
+    """An edition's file, fingerprints included (to rewrite it: `formats`
+    may accept older ones)."""
+    db, meta = _open(path, formats)
     try:
-        meta = dict(db.execute("SELECT key, value FROM meta"))
-        if meta.get("format") != FORMAT:
-            raise ValueError(f"format {meta.get('format')}, expected {FORMAT}")
-        artworks = [
-            Artwork(key, layout, url, Fingerprint(
-                np.frombuffer(points, np.float16).astype(np.float32).reshape(-1, 2),
-                np.frombuffer(descriptors, np.uint8).reshape(-1, 32)))
-            for key, layout, url, points, descriptors in db.execute(
-                "SELECT artwork_key, layout, source_url, keypoints, descriptors FROM artworks")
-        ]
-        printings = [(row[0], Printing(*row[1:])) for row in db.execute(
-            "SELECT artwork_key, lang, set_id, set_total, number, card_id, name FROM printings")]
+        artworks = [Artwork(key, layout, url, _decoded(points, descriptors), file=path)
+                    for key, layout, url, points, descriptors in db.execute(
+                        "SELECT artwork_key, layout, source_url, keypoints, descriptors"
+                        " FROM artworks")]
+        printings = _printings(db)
     finally:
         db.close()
     return meta, artworks, printings
 
 
-_files: dict[Path, tuple[float, tuple]] = {}
-_library: tuple[tuple, list[Artwork]] | None = None
+@dataclass
+class _Edition:
+    meta: dict[str, str]
+    artworks: list[tuple[str, str, str]]  # key, layout, source url
+    documents: list[np.ndarray | None]  # each illustration's terms; None without words
+    printings: list[tuple[str, Printing]]
+
+
+def _read_index(path: Path, vocabulary: np.ndarray | None) -> _Edition:
+    """An edition's file without its fingerprints: only what the index needs."""
+    db, meta = _open(path, (FORMAT,))
+    usable = vocabulary is not None and meta.get("vocabulary") == vocabulary_id(vocabulary)
+    if vocabulary is not None and not usable:
+        log.warning("Fingerprints %s: visual words of another vocabulary, never shortlisted"
+                    " out (rebuild with --reindex)", path.name)
+    try:
+        artworks, documents = [], []
+        for key, layout, url, points, found in db.execute(
+                "SELECT artwork_key, layout, source_url, keypoints, words FROM artworks"):
+            artworks.append((key, layout, url))
+            documents.append(terms(np.frombuffer(points, np.float16).astype(np.float32)
+                                   .reshape(-1, 2), np.frombuffer(found, np.uint16), layout)
+                             if usable and found and layout in LAYOUTS else None)
+        printings = _printings(db)
+    finally:
+        db.close()
+    return _Edition(meta, artworks, documents, printings)
+
+
+_cache: OrderedDict[tuple[Path, str], Fingerprint] = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def loaded(artworks: list[Artwork]) -> list[Fingerprint]:
+    """The fingerprints of these illustrations, read from their files if not
+    in memory; the LOADED last read are kept."""
+    found: dict[tuple[Path | None, str], Fingerprint] = {}
+    asked: dict[Path, list[str]] = defaultdict(list)
+    with _cache_lock:
+        for art in artworks:
+            if art.stored is not None or art.file is None:
+                continue
+            key = (art.file, art.key)
+            if key in _cache:
+                _cache.move_to_end(key)
+                found[key] = _cache[key]
+            else:
+                asked[art.file].append(art.key)
+    for path, keys in asked.items():
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            for start in range(0, len(keys), 500):
+                chunk = keys[start:start + 500]
+                for key, points, descriptors in db.execute(
+                        "SELECT artwork_key, keypoints, descriptors FROM artworks"
+                        f" WHERE artwork_key IN ({','.join('?' * len(chunk))})", chunk):
+                    found[(path, key)] = _decoded(points, descriptors)
+        finally:
+            db.close()
+        with _cache_lock:
+            for key in keys:
+                if (path, key) in found:
+                    _cache[(path, key)] = found[(path, key)]
+            while len(_cache) > LOADED:
+                _cache.popitem(last=False)
+    empty = Fingerprint(np.zeros((0, 2), np.float32), np.zeros((0, 32), np.uint8))
+    return [art.stored if art.stored is not None else found.get((art.file, art.key), empty)
+            for art in artworks]
+
+
+_files: dict[Path, tuple[float, str, _Edition]] = {}  # mtime, vocabulary id, contents
+_library: tuple[tuple, Library] | None = None
 _lock = threading.Lock()
 
 
-def library(folder: Path | None = None) -> list[Artwork]:
+def library(folder: Path | None = None) -> Library:
     """Every edition's illustrations, each with all its printings (POOLS by default).
 
-    Files are read once, again when they change. A printing whose illustration
-    is in no file found (its first edition's file is missing) is left out.
+    Files are read once, again when they change; fingerprints are read only
+    when compared (see loaded). A printing whose illustration is in no file
+    found (its first edition's file is missing) is left out.
     """
     global _library
     folder = POOLS if folder is None else folder
     with _lock:
-        state = []
+        vocabulary = read_vocabulary(folder)
+        words_of = vocabulary_id(vocabulary)
+        state = [("vocabulary", words_of)]
         for path in sorted(folder.glob("*.sqlite")):
             mtime = path.stat().st_mtime
-            if path not in _files or _files[path][0] != mtime:
+            if path not in _files or _files[path][:2] != (mtime, words_of):
+                with _cache_lock:  # fingerprints of the file before
+                    for key in [k for k in _cache if k[0] == path]:
+                        del _cache[key]
                 try:
-                    _files[path] = (mtime, read_edition(path))
+                    _files[path] = (mtime, words_of, _read_index(path, vocabulary))
                 except (sqlite3.Error, ValueError, KeyError) as error:
+                    _files.pop(path, None)
                     log.warning("Fingerprints %s not usable: %s", path.name, error)
                     continue
             state.append((path, mtime))
         state = tuple(state)
         if _library is None or _library[0] != state:
             artworks: dict[str, Artwork] = {}
-            for path, _ in state:
-                for art in _files[path][1][1]:
-                    artworks[art.key] = Artwork(art.key, art.layout, art.source_url,
-                                                art.fingerprint)
-            for path, _ in state:
-                for key, printing in _files[path][1][2]:
+            documents: dict[str, np.ndarray | None] = {}
+            for path, _ in state[1:]:
+                edition = _files[path][2]
+                for (key, layout, url), terms_ in zip(edition.artworks, edition.documents):
+                    artworks[key] = Artwork(key, layout, url, file=path)
+                    documents[key] = terms_
+            for path, _ in state[1:]:
+                for key, printing in _files[path][2].printings:
                     if key in artworks:
                         artworks[key].printings.append(printing)
                     else:
                         log.warning("%s: %s links to %s, in no file", path.name,
                                     printing.card_id, key)
-            _library = (state, [a for a in artworks.values() if a.printings])
+            found = Library(a for a in artworks.values() if a.printings)
+            indexed = [a for a in found if documents[a.key] is not None]
+            if vocabulary is not None and indexed:
+                for slot, art in enumerate(indexed):
+                    art.slot = slot
+                found.shortlist = Shortlist(sorted({a.layout for a in indexed}),
+                                            [(a.layout, documents[a.key]) for a in indexed],
+                                            vocabulary)
+            _library = (state, found)
         return _library[1]
 
 
@@ -358,20 +605,31 @@ def best_match(card: np.ndarray, artworks: list[Artwork], keep: Callable[[Printi
     """The illustration the straightened card shows, if clearly one.
 
     Only illustrations with a printing `keep` accepts are compared (e.g. those
-    printed with the set size read), and only those printings returned.
+    printed with the set size read), and only those printings returned. More
+    than SHORTLIST of them: only the SHORTLIST the library's index finds most
+    alike (and any it doesn't index).
     """
     photo: dict[str, Fingerprint] = {}  # per layout
-    scored: list[tuple[int, Artwork, list[Printing]]] = []
+    candidates: list[tuple[Artwork, list[Printing]]] = []
     for art in artworks:
         printings = [p for p in art.printings if keep(p)]
-        if not printings:
-            continue
-        if art.layout not in photo:
-            photo[art.layout] = fingerprint(card, art.layout)
-        scored.append((agreement(photo[art.layout], art.fingerprint), art, printings))
-    if not scored:
+        if printings:
+            candidates.append((art, printings))
+            if art.layout not in photo:
+                photo[art.layout] = fingerprint(card, art.layout)
+    if not candidates:
         return None
-    scored.sort(key=lambda s: s[0], reverse=True)
+    shortlist = getattr(artworks, "shortlist", None)
+    if shortlist is not None and len(candidates) > SHORTLIST:
+        scores = shortlist.scores(photo)
+        ranked = [c for c in candidates if c[0].slot is not None]
+        cut = sorted((scores[c[0].slot] for c in ranked), reverse=True)[SHORTLIST - 1] \
+            if len(ranked) >= SHORTLIST else -1.0
+        candidates = [c for c in candidates if c[0].slot is None or scores[c[0].slot] >= cut]
+    prints = loaded([art for art, _ in candidates])
+    scored = sorted(((agreement(photo[art.layout], print_), art, printings)
+                     for (art, printings), print_ in zip(candidates, prints)),
+                    key=lambda s: s[0], reverse=True)
     inliers, art, printings = scored[0]
     runner_up = scored[1][0] if len(scored) > 1 else 0
     if inliers < min_inliers or inliers < MIN_MARGIN * runner_up:

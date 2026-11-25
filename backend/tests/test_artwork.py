@@ -113,16 +113,6 @@ def test_a_fingerprint_keeps_at_most_the_set_number_of_keypoints():
     assert 0 < len(fingerprint.keypoints) == len(fingerprint.descriptors) <= artwork.FEATURES
 
 
-def test_layouts_are_known_by_era_and_category():
-    assert artwork.layout_for("base", "Pokemon") == "wizards-pokemon"
-    assert artwork.layout_for("neo", "Trainer") == "wizards-trainer"
-    assert artwork.layout_for("ecard", "Energy") == "ecard-energy"
-    assert artwork.layout_for("hgss", "Pokemon", "Rare PRIME") == "hgss-pokemon"
-    assert artwork.layout_for("hgss", "Pokemon", "LEGEND") == "hgss-legend"
-    assert artwork.layout_for("base", "Pokemon", "LEGEND") is None  # no such card
-    assert artwork.layout_for("sv", "Pokemon") is None  # not measured yet
-
-
 @pytest.mark.parametrize(("a", "b", "same"), [
     ("025", "25", True), ("H01", "H1", True), ("102", "0102", True),
     ("14", "4", False), ("H32", "32", False), (None, "102", False),
@@ -192,6 +182,69 @@ def test_a_match_must_stand_out_from_the_next_illustration(fingerprints):
     card = straightened(photo(drawn_card(7)))
 
     assert artwork.best_match(card, artwork.library(), everything) is None
+
+
+def test_fingerprints_are_read_from_their_file_only_when_compared(fingerprints):
+    art = drawn(7, "old1/14")
+    save(fingerprints, "old1", [art], [("old1/14", printing("old1-14", "14"))])
+
+    (read,) = artwork.library()
+
+    assert read.stored is None and read.file == fingerprints / "old1.sqlite"
+    assert np.array_equal(read.fingerprint.descriptors, art.fingerprint.descriptors)
+
+
+def vocabulary(folder, first: int = 0) -> np.ndarray:
+    """Visual words made of the descriptors of 20 drawings, saved in `folder`."""
+    descriptors = np.vstack([artwork.fingerprint(drawn_card(d), LAYOUT).descriptors
+                             for d in range(first, first + 20)])
+    words = descriptors[np.random.default_rng(0).choice(len(descriptors), 256, replace=False)]
+    (folder / artwork.VOCABULARY).write_bytes(words.tobytes())
+    return words
+
+
+def indexed_edition(folder, drawings) -> None:
+    words = vocabulary(folder)
+    cards = [(d, str(d)) for d in drawings]
+    keys = [artwork.artwork_key("old1", n) for _, n in cards]
+    artwork.write_edition(
+        folder / "old1.sqlite", {"set_id": "old1"},
+        [drawn(d, key) for (d, _), key in zip(cards, keys)],
+        [(key, printing(f"old1-{n}", n)) for (_, n), key in zip(cards, keys)], words)
+
+
+def test_the_index_ranks_first_the_illustration_photographed(fingerprints):
+    indexed_edition(fingerprints, range(30, 42))
+    library = artwork.library()
+    card = straightened(photo(drawn_card(35)))
+
+    scores = library.shortlist.scores({LAYOUT: artwork.fingerprint(card, LAYOUT)})
+
+    assert [a.key for a in library][int(np.argmax(scores))] == "old1/35"
+
+
+def test_with_more_illustrations_than_the_shortlist_the_right_one_is_still_found(
+        fingerprints, monkeypatch):
+    monkeypatch.setattr(artwork, "SHORTLIST", 3)
+    indexed_edition(fingerprints, range(30, 42))
+    card = straightened(photo(drawn_card(38), seed=2))
+
+    match = artwork.best_match(card, artwork.library(), everything)
+
+    assert match is not None and match.artwork.key == "old1/38"
+
+
+def test_words_of_another_vocabulary_are_not_used_to_leave_illustrations_out(
+        fingerprints, monkeypatch):
+    monkeypatch.setattr(artwork, "SHORTLIST", 1)
+    indexed_edition(fingerprints, [7, 9])
+    vocabulary(fingerprints, 50)  # the vocabulary changed since
+    card = straightened(photo(drawn_card(9)))
+
+    library = artwork.library()
+
+    assert library.shortlist is None
+    assert artwork.best_match(card, library, everything).artwork.key == "old1/9"
 
 
 def test_only_the_printings_kept_are_matched(fingerprints):
