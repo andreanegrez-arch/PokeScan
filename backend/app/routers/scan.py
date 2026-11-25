@@ -1,8 +1,9 @@
 import json
 from datetime import datetime
+from typing import Annotated
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 
 from app.config import ENV_FILE, settings
 from app.db import DbConnection
@@ -63,6 +64,11 @@ def scan_card(
     front: UploadFile,
     back: UploadFile | None = None,
     lang: Lang = "it",
+    set_id: Annotated[str | None, Query(
+        description="The card's edition, if the user knows it (e.g. base1): its "
+                    "illustrations are compared whatever set size is read",
+        max_length=40,
+    )] = None,
 ) -> ScanResult:
     """Identify a card from its printed code.
 
@@ -73,7 +79,10 @@ def scan_card(
     3. look it up by number + official set size (or the promo number);
     4. several sets share that size: keep the card whose set code is printed
        next to the number, then the one whose name is printed at the top;
-    5. still undecided: status 'ambiguous'. No code read: 'unreadable'.
+    5. where the edition has fingerprints of its illustrations, compare the
+       card's: a clear match confirms the number read or corrects it;
+    6. still undecided: status 'ambiguous'. No code read and no illustration
+       recognized: 'unreadable'.
 
     When a card is found, or its code is read but no card in the catalog has
     it (status 'not_found'), `condition` holds the front's centering and, with
@@ -96,6 +105,6 @@ def scan_card(
         read[side] = (photo, _read(photo))
     images = {side: _image(photo, data) for side, (photo, data) in read.items()}
 
-    result = identify(conn, images["front"], lang, images.get("back"))
+    result = identify(conn, images["front"], lang, images.get("back"), set_id=set_id)
     _archive(read, lang, result)
     return result

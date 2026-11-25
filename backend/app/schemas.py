@@ -124,13 +124,19 @@ class ConditionEstimate(BaseModel):
 class ScanResult(BaseModel):
     status: ScanStatus = Field(
         description=(
-            "matched: one card identified from its code. "
+            "matched: one card identified from its code, checked or corrected by its "
+            "illustration where the edition has fingerprints, or from the illustration "
+            "alone when no code could be read. "
             "ambiguous: the code fits several sets; the user picks from candidates. "
             "unreadable: no code could be read; ask for a sharper photo. "
             "not_found: the code was read but matches no known card."
         )
     )
-    code: CollectorCode | None = Field(description="Null when status is unreadable")
+    code: CollectorCode | None = Field(
+        description="Null when status is unreadable, or when the card was recognized "
+                    "from its illustration alone. Corrected when the illustration showed "
+                    "the number was misread (raw keeps what was read)"
+    )
     match: CardSummary | None = Field(description="Set only when status is matched")
     candidates: list[CardSummary] = Field(
         description="Cards sharing the code, when status is ambiguous"

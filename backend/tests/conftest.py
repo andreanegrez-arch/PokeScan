@@ -4,8 +4,18 @@ from psycopg import sql
 
 from app.db import connect
 from app.init_db import SCHEMA_FILE
+from app.recognition import artwork
 
 TEST_DB = "pokescan_test"
+
+
+@pytest.fixture(autouse=True)
+def fingerprints(tmp_path_factory, monkeypatch):
+    """An empty folder for the editions' fingerprints, in place of backend/fingerprints/:
+    tests never depend on the files built there. Tests that need one write it here."""
+    folder = tmp_path_factory.mktemp("fingerprints")
+    monkeypatch.setattr(artwork, "POOLS", folder)
+    return folder
 
 
 @pytest.fixture

@@ -15,7 +15,9 @@ analysis notebooks).
 ## How a scan works
 
 The same artwork is often reprinted in several sets, so PokeScan identifies a
-card from the **code printed at the bottom**, never from the artwork alone:
+card from the **code printed at the bottom**, and uses the artwork to check
+it within the edition the code points to (see
+[Recognition by illustration](#recognition-by-illustration)):
 
 1. Find the card in the photo and straighten it (OpenCV: edges, the largest
    four-sided shape with a card's proportions, perspective warp).
@@ -24,16 +26,23 @@ card from the **code printed at the bottom**, never from the artwork alone:
    read it again turned around.
 3. Look it up by number + official set size. A code no card has may be a
    misreading (`5107/236` for 107/236, a symbol read as a 5), so corrected
-   versions are tried too.
+   versions are tried too. So are digits read without their slash, as the
+   small print of old cards often is (`1102` for 1/102 or 11/102, `702` for
+   7/102), after every code read with one.
 4. Several sets have that size (e.g. 136/189 exists in *Darkness Ablaze* and
    *Astral Radiance*): keep the card whose set code is printed next to the
    number (`SVI` on recent cards), then the one whose name is printed at the
    top. A corrected code is kept only if the set code or the name agrees with
    it. The first real phone photo showed why: a Chinese card's code, misread
    as `161/5`, was "corrected" to 1/5, and two unrelated cards were offered.
-5. Still undecided: show the candidates and let the user choose.
-   No code readable: ask for a better photo (or a manual search by code).
-6. A card was found: estimate its condition (see [Condition](#condition)).
+5. Where the edition of that size has fingerprints of its illustrations, the
+   card's illustration is compared with them, unless the set code or the name
+   already settled it: a clear match confirms the number, or corrects it
+   (Raichu's 14/102 read as `4/102` was offered as Charizard). No code read
+   at all: the illustration is looked for in every edition, last.
+6. Still undecided: show the candidates and let the user choose.
+   Nothing recognized: ask for a better photo (or a manual search by code).
+7. A card was found: estimate its condition (see [Condition](#condition)).
    The same when the code is read but no card has it (a Japanese or Chinese
    card, say): the card isn't in the catalog, yet its condition can be
    measured all the same.
@@ -61,7 +70,64 @@ on real photos. Remaining errors: partly read codes (`1/ 9`), sets of the same
 size where the name doesn't settle it (e.g. the two halves of a Trainer Kit
 hold the same card), and Italian cards of sets TCGdex has no Italian names
 for. One row per card, with the centering measured on both, is in
-[`analysis/data/scan_evaluation.csv`](analysis/data/scan_evaluation.csv).
+[`analysis/data/scan_evaluation.csv`](analysis/data/scan_evaluation.csv)
+(measured before recognition by illustration).
+
+### Recognition by illustration
+
+On real photos of old cards, OCR misreads the small print of the code: 44
+phone photos of Italian Base Set cards (16 holos, most photographed twice,
+front and back) gave the right card only half the time. Raichu's `14/102`
+read as `4/102` was offered as Charizard; `11/102` read as `1102`, or nothing
+read at all. So the card's illustration is compared with the illustrations of
+the edition the code points to:
+
+- **Fingerprints, not pictures.** For each card of an edition,
+  `python -m jobs.build_fingerprints base1` downloads its English picture
+  from pokemontcg.io into a temporary folder, fingerprints the artwork box
+  and deletes the picture. A fingerprint is a 64-bit perceptual hash and up to
+  800 ORB keypoints (OpenCV: no model to download). Base Set: 102
+  illustrations, 3.0 MB (`backend/fingerprints/base1.sqlite`), from 85 MB of
+  pictures.
+- **The artwork box only**, a little inside its frame, measured per era and
+  per kind of card (Pokémon, Trainer, Energy): no printed text, so one
+  fingerprint serves every language, linked to each printing (language,
+  edition, number, name from that language's official list). Cards printed
+  only in Japanese, Korean or Chinese, with their own editions and numbers,
+  will have fingerprints of their own; names in a language a card was never
+  printed in will be marked as not official. The file has room for both.
+- **The lines, not the shading.** Before the keypoints, shading broader
+  than 6 px is taken out of the box: a holo background is dark on the
+  picture and light on a photo catching the foil, which left Raichu's
+  keypoints with nothing in common.
+- **Matched by position too.** Photo and picture are straightened to the
+  same size, so matching keypoints must agree on one transform close to the
+  identity (RANSAC). A match is kept with at least 12 keypoints in agreement
+  and twice as many as the next illustration; 20 when nothing was read and
+  every edition is searched. On the 44 photos, the right illustration had 16
+  to 144, any other at most 6, and cards of other sets at most 4. The
+  perceptual hash, a few bits apart between photos and pictures of different
+  cards alike, isn't used to decide.
+- **The edition comes from the set size read** (`/102`: Base Set), or from
+  the user (`set_id` on `/scan`). Only when no code is read are all editions
+  searched.
+
+Measured on the same 44 photos, each change alone and both (the thresholds
+were chosen on these photos too, so expect less on new ones):
+
+| Outcome | Before | Number rules | Illustration | Both |
+|---|---:|---:|---:|---:|
+| Right card identified | 50.0% | 84.1% | 100% | 100% |
+| Several candidates, the right one missing | 13.6% | 11.4% | 0% | 0% |
+| Code read, but no card has it | 0% | 4.5% | 0% | 0% |
+| No code read | 36.4% | 0% | 0% | 0% |
+| Wrong card identified | 0% | 0% | 0% | 0% |
+| Median time per scan (laptop CPU) | 2.97 s | 1.42 s | 2.93 s | 1.56 s |
+
+The number rules alone settle the codes read without a slash, when the name
+read at the top agrees; they can't fix a digit read wrong (`4/102` for 14/102
+or 6/102). The illustration settles all of them. Scans get faster because a
+code read early saves reading the photo in other ways.
 
 ### Condition
 
@@ -199,6 +265,7 @@ analysis/ (SQL + Jupyter) ──► PostgreSQL
 
 ```
 backend/    FastAPI app, recognition, catalog import, daily price job, tests
+  fingerprints/  illustrations' fingerprints, one SQLite file per edition
 db/         PostgreSQL schema
 frontend/   React + TypeScript app: scan, search, card page with price chart
 analysis/   SQL queries and Jupyter notebooks
@@ -225,6 +292,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env            # then set DATABASE_PASSWORD in .env
 python -m app.init_db           # creates the database and the tables
 python -m jobs.import_catalog   # card catalog from TCGdex (first run: ~15 min)
+python -m jobs.build_fingerprints base1   # optional: Base Set illustrations (~85 MB downloaded, then deleted)
 uvicorn app.main:app --reload
 ```
 
@@ -367,7 +435,9 @@ Register-ScheduledTask -TaskName "PokeScan - prezzi Cardmarket" -Action $action 
 | GET    | `/cards/{card_id}/prices`     | Daily price history for one variant                  |
 
 `/scan` takes a `front` photo and an optional `back` photo, and answers with
-the card (or the candidates) and its `condition`. All endpoints
+the card (or the candidates) and its `condition`. An optional `set_id`
+(e.g. `base1`) is the edition, when the user knows it: its illustrations are
+compared whatever set size is read. All endpoints
 accept `lang=it|en`. Card ids are TCGdex ids (e.g. `swsh3-136`), prices are in
 EUR, variants are `normal` and `reverse` (reverse holo).
 
@@ -393,6 +463,7 @@ prices are therefore uncertain. If PostgreSQL is down, the endpoints answer
 |--------|----------|---------|
 | [Cardmarket price guide](https://news.cardmarket.com/en/Magic/were-making-the-price-guide-and-product-catalogue-available-for-download) | Daily prices (EUR) of every Pokémon product | Once a night, around 02:50 Italian time |
 | [TCGdex](https://tcgdex.dev) | Catalog: cards, sets, set codes and symbols, images (Italian included), Cardmarket product ids | Cards when sets are released; its own prices around midnight |
+| [pokemontcg.io](https://pokemontcg.io) | English pictures of the cards, Wizards era included, to fingerprint their illustrations (pictures deleted once done) | When an edition's fingerprints are made |
 
 The daily job stores Cardmarket's price guide; the catalog links each card to
 its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
@@ -406,8 +477,12 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 - [x] Card identification from the printed code (OCR, set code, card name)
 - [x] Condition estimate: centering, edge whitening
 - [x] Web app: scan, search, card page with prices, price history chart and condition
-- [ ] Settle the remaining ties by comparing the set symbol or the artwork
-- [ ] Measure recognition and condition on real phone photos (whitening has
-      only been tested on drawn card backs)
+- [x] Recognition by illustration (fingerprints per edition): Base Set
+- [ ] Fingerprints of the other editions (each era's artwork box to measure);
+      choosing the edition by hand in the app
+- [ ] Settle the remaining ties by comparing the set symbol
+- [ ] Measure recognition and condition on more real phone photos (so far 44
+      photos of Base Set cards; whitening has only been tested on drawn card
+      backs)
 - [ ] Analysis notebooks
 - [ ] Deploy

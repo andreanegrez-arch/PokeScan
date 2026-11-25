@@ -74,6 +74,16 @@ LOOKALIKE_DIGITS = str.maketrans("OIL", "011")
 # Uppercase words printed near the code that are never a set code.
 NOT_SET_CODES = {"GAME", "FREAK", "GAMEFREAK"}
 
+# Digits read without their slash, as the small print of old cards often is:
+# '1102' for 1/102 or 11/102, '702' for 7/102, 'B02' for 8/102. Not a year
+# ('©1999'), a Pokédex number ('N. 107', '#107') or HP ('120 PV').
+SLASHLESS = re.compile(r"(?<![0-9A-Z/.,:-])(?P<digits>[0-9OILB]{3,6})(?![0-9A-Z/])")
+SLASHLESS_LOOKALIKES = str.maketrans("OILB", "0118")
+NOT_A_CODE_BEFORE = re.compile(r"(?:\bN\.?|#|\bNO\.?)\s*$")
+NOT_A_CODE_AFTER = re.compile(r"^\s*(?:PV|HP|PS|KP)\b")
+YEAR = re.compile(r"0?(?:19|20)\d\d")  # '©1995' is often read 'O1995'
+MAX_SET_SIZE = 400  # the largest official set size is ~300
+
 
 @dataclass
 class CodeReading:
@@ -89,9 +99,16 @@ def _digits(text: str) -> str:
     return text.translate(LOOKALIKE_DIGITS)
 
 
-def read_code(lines: list[str]) -> CodeReading:
-    """Collector codes found in OCR lines, plus words that may be the set code."""
+def read_code(lines: list[str], slash_lost: bool = True) -> CodeReading:
+    """Collector codes found in OCR lines, plus words that may be the set code.
+
+    `slash_lost`: also guess codes from digits read without their slash (see
+    SLASHLESS), after every code read with one: the copyright line above the
+    code holds digits too ('2000' read '200': 2/100, Blastoise δ of another
+    set, would beat Blastoise's 2/102 on the next line).
+    """
     reading = CodeReading()
+    slashless: list[tuple[str, str, str]] = []
 
     def add(raw: str, number: str, total: str | None, guess: bool = False) -> None:
         code = CollectorCode(raw=raw, set_code=None, number=number, total=total)
@@ -127,12 +144,41 @@ def read_code(lines: list[str]) -> CodeReading:
         for match in PROMO.finditer(text):
             if re.search(r"\d", match["digits"]):
                 add(match.group(0), match["prefix"] + _digits(match["digits"]), None)
+        if slash_lost:
+            for match in SLASHLESS.finditer(text):
+                digits = match["digits"]
+                if (len(re.findall(r"\d", digits)) < 2
+                        or YEAR.fullmatch(digits.translate(SLASHLESS_LOOKALIKES))
+                        or NOT_A_CODE_BEFORE.search(text[: match.start()])
+                        or NOT_A_CODE_AFTER.match(text[match.end() :])):
+                    continue
+                slashless += [(match.group(0), n, t) for n, t in slashless_codes(digits)]
 
         for word in line.split():
             letters = re.match(r"[A-Z]{2,}", word)
             if letters and word == word.upper() and letters.group(0) not in NOT_SET_CODES:
                 reading.set_hints.append(letters.group(0))
+    for raw, number, total in slashless:
+        add(raw, number, total, guess=True)
     return reading
+
+
+def slashless_codes(read: str) -> list[tuple[str, str]]:
+    """(number, total) pairs that digits read without a slash may be.
+
+    The slash was read as nothing ('1102': 1/102), as a digit ('127102':
+    12/102), or with the 1 after it, as they look like one stroke ('702':
+    7/102; '1102': 11/102).
+    """
+    digits = read.translate(SLASHLESS_LOOKALIKES)
+    codes = []
+    for cut in range(1, len(digits) - 1):
+        number, rest = digits[:cut], digits[cut:]
+        for total in (rest, rest[1:], "1" + rest):
+            if (len(total) >= 2 and 10 <= int(total) <= MAX_SET_SIZE
+                    and int(number) <= int(total) + 60 and (number, total) not in codes):
+                codes.append((number, total))
+    return codes
 
 
 def _split_lookalikes(prefix: str, digits: str) -> tuple[str, str]:

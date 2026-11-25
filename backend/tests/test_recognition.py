@@ -95,6 +95,40 @@ def test_readings_with_digits_changed_are_marked_as_guesses():
     assert read_code(["SVIEN025/198"]).guesses == []
 
 
+@pytest.mark.parametrize(
+    ("line", "codes"),
+    [  # bottom lines of Italian Base Set cards, as RapidOCR read them
+        ("as. Ken Sugiar O,9%  Nd Creatre CAMEFREA.  20r: 1102 *", [("1", "102"), ("11", "102")]),
+        ("s. Ken leg 0  8 Mndo. Oss, GAMEREA yT J00 W 702 ", [("7", "102")]),
+        (". Kan Sngimar O9, . Nanda Crr. GAME   W B02", [("8", "102")]),
+        ("127102", [("12", "102"), ("127", "102")]),  # the slash read as a 7
+    ],
+)
+def test_codes_read_without_their_slash_are_guessed(line, codes):
+    reading = read_code([line])
+
+    assert [(c.number, c.total) for c in reading.codes] == codes
+    assert reading.guesses == reading.codes
+    assert read_code([line], slash_lost=False).codes == []
+
+
+def test_codes_read_with_their_slash_come_before_guesses_without():
+    # '200' (from ©2000) would be 2/100, Blastoise δ of another set.
+    reading = read_code(["Ken Sugimorl O1995, 96, 9 Nmendo, Creatur GAMEFREAK  200 W", "2/102"])
+
+    assert [(c.number, c.total) for c in reading.codes][:2] == [("2", "102"), ("2", "100")]
+
+
+@pytest.mark.parametrize("line", [
+    "impossibili da vedere. LIV 33 N. 107",  # Pokédex number
+    "LV. 40 #107",
+    "Raichu 120 PV",  # HP
+    "©1999 Wizards. O1995, 2000",  # years
+])
+def test_other_numbers_are_not_guessed_as_codes(line):
+    assert read_code([line]).codes == []
+
+
 def test_copyright_lines_are_not_codes():
     assert read_code(["©2023 Pokémon/Nintendo/Creatures/GAME FREAK"]).codes == []
 
