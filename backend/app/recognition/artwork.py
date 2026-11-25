@@ -65,7 +65,9 @@ RARITY_LAYOUTS = {"LEGEND": "legend"}  # cards whose box isn't their category's
 
 ART_WIDTH = 480  # the box is resized to this width before fingerprinting
 DETAIL_SIGMA = 6  # px: shading broader than this is left out of the fingerprint
-FEATURES = 800  # ORB keypoints kept per illustration
+# ORB keypoints kept per illustration. On the 44 real photos of Base Set cards,
+# 500 recognized every card, as 800 did, 400 missed Raichu twice.
+FEATURES = 500
 RATIO = 0.8  # Lowe's ratio test: a match must be clearly better than the next one
 MIN_MATCHES = 8  # fewer good matches: no transform is estimated
 REPROJECTION = 0.03 * ART_WIDTH  # how far an inlier may land from where it should
