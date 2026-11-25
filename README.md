@@ -35,11 +35,12 @@ it within the edition the code points to (see
    top. A corrected code is kept only if the set code or the name agrees with
    it. The first real phone photo showed why: a Chinese card's code, misread
    as `161/5`, was "corrected" to 1/5, and two unrelated cards were offered.
-5. Where the edition of that size has fingerprints of its illustrations, the
-   card's illustration is compared with them, unless the set code or the name
-   already settled it: a clear match confirms the number, or corrects it
-   (Raichu's 14/102 read as `4/102` was offered as Charizard). No code read
-   at all: the illustration is looked for in every edition, last.
+5. Where editions of that size have fingerprints of their illustrations, the
+   card's illustration is compared with them all, unless the set code or the
+   name already settled it: a clear match confirms the number, or corrects it
+   (Raichu's 14/102 read as `4/102` was offered as Charizard), and picks the
+   edition when two share the size (`/102`: Base Set or Triumphant). No code
+   read at all: the illustration is looked for in every edition, last.
 6. Still undecided: show the candidates and let the user choose.
    Nothing recognized: ask for a better photo (or a manual search by code).
 7. A card was found: estimate its condition (see [Condition](#condition)).
@@ -83,19 +84,32 @@ read at all. So the card's illustration is compared with the illustrations of
 the edition the code points to:
 
 - **Fingerprints, not pictures.** For each card of an edition,
-  `python -m jobs.build_fingerprints base1` downloads its English picture
-  from pokemontcg.io into a temporary folder, fingerprints the artwork box
-  and deletes the picture. A fingerprint is a 64-bit perceptual hash and up to
-  800 ORB keypoints (OpenCV: no model to download). Base Set: 102
-  illustrations, 3.0 MB (`backend/fingerprints/base1.sqlite`), from 85 MB of
-  pictures.
-- **The artwork box only**, a little inside its frame, measured per era and
-  per kind of card (Pokémon, Trainer, Energy): no printed text, so one
-  fingerprint serves every language, linked to each printing (language,
-  edition, number, name from that language's official list). Cards printed
-  only in Japanese, Korean or Chinese, with their own editions and numbers,
-  will have fingerprints of their own; names in a language a card was never
-  printed in will be marked as not official. The file has room for both.
+  `python -m jobs.build_fingerprints` downloads its English picture from
+  pokemontcg.io into a temporary folder, fingerprints the artwork box and
+  deletes the picture. A fingerprint is up to 500 ORB keypoints (OpenCV: no
+  model to download). Done for the whole Wizards era and Triumphant (16
+  editions, secret cards included): 1,816 cards, 1,523 illustrations,
+  28.9 MB in `backend/fingerprints/` (one SQLite file per edition), from
+  1.5 GB of pictures.
+- **The artwork box only**, a little inside its frame, measured per era
+  (Wizards, e-Card, HeartGold & SoulSilver) and per kind of card (Pokémon,
+  Trainer, Energy; LEGEND halves): no printed text, so one fingerprint serves
+  every language, linked to each printing (language, edition, number, name
+  from that language's official list). Cards printed only in Japanese, Korean
+  or Chinese, with their own editions and numbers, will have fingerprints of
+  their own; names in a language a card was never printed in will be marked
+  as not official. The files have room for both. TCGdex has Italian names
+  for Base Set and Jungle only: the other editions' Italian printings are
+  left out rather than translated.
+- **One fingerprint per illustration.** A reprint (Base Set 2, Legendary
+  Collection) links its printing to the illustration of the card it reprints
+  when the two pictures agree on 80 keypoints or more; the number and set
+  size read then pick the printing. A holo and its non-holo (Jungle, Fossil,
+  Neo, e-Card) agree on far fewer (7 to 60) and keep a fingerprint each: on
+  simulated photos of such pairs, the photo prefers its own printing (84-91%,
+  never the other one), where one shared fingerprint recognized the
+  illustration in 23-86% of them. Two illustrations of the same Pokémon
+  never agreed on more than 4 keypoints (343 pairs).
 - **The lines, not the shading.** Before the keypoints, shading broader
   than 6 px is taken out of the box: a holo background is dark on the
   picture and light on a photo catching the foil, which left Raichu's
@@ -105,12 +119,26 @@ the edition the code points to:
   identity (RANSAC). A match is kept with at least 12 keypoints in agreement
   and twice as many as the next illustration; 20 when nothing was read and
   every edition is searched. On the 44 photos, the right illustration had 16
-  to 144, any other at most 6, and cards of other sets at most 4. The
-  perceptual hash, a few bits apart between photos and pictures of different
-  cards alike, isn't used to decide.
-- **The edition comes from the set size read** (`/102`: Base Set), or from
-  the user (`set_id` on `/scan`). Only when no code is read are all editions
-  searched.
+  to 144, any other at most 6, and cards of other sets at most 4.
+- **The editions come from the set size read**, all those printed with it:
+  `/102` is Base Set or Triumphant, `/64` Jungle or Neo Revelation, `/132`
+  Gym Heroes or Gym Challenge, `H32` Aquapolis's or Skyridge's holos; the
+  illustration decides. Or from the user (`set_id` on `/scan`). Only when no
+  code is read are all editions searched (about 3 s more).
+- **500 keypoints** per illustration: on the 44 photos, 400 left Raichu
+  undecided twice, 500 to 800 recognized every card. Base Set's file: 1.7 MB
+  at 400, 1.9 MB at 500, 2.3 MB at 600, 3.0 MB at 800.
+
+`python -m jobs.build_fingerprints <editions> --check 12` also turns 12
+cards per edition into simulated phone photos (perspective, uneven light,
+blur, noise, glare, JPEG) and recognizes them against every edition's
+fingerprints. On the 16 editions (192 photos): 189 right with the set size
+known, 188 searching every edition, none wrong. Left undecided: Starmie and
+Impostor Professor Oak (Base Set), Machoke and Nidoran ♂ (Legendary
+Collection; Machoke through Base Set's picture of the same illustration).
+Simulated photos
+are kinder than real ones (no sleeves, no fingers, flat cards), and only Base
+Set has been tested on real photos so far.
 
 Measured on the same 44 photos, each change alone and both (the thresholds
 were chosen on these photos too, so expect less on new ones):
@@ -292,7 +320,9 @@ pip install -r requirements-dev.txt
 cp .env.example .env            # then set DATABASE_PASSWORD in .env
 python -m app.init_db           # creates the database and the tables
 python -m jobs.import_catalog   # card catalog from TCGdex (first run: ~15 min)
-python -m jobs.build_fingerprints base1   # optional: Base Set illustrations (~85 MB downloaded, then deleted)
+# optional, the fingerprints are in the repository; to make them again
+# (Wizards era and Triumphant, ~1.5 GB downloaded, then deleted; ~1.5 h):
+# python -m jobs.build_fingerprints base1 base2 base3 base4 base5 gym1 gym2 neo1 neo2 neo3 neo4 lc ecard1 ecard2 ecard3 hgss4
 uvicorn app.main:app --reload
 ```
 
@@ -477,9 +507,11 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 - [x] Card identification from the printed code (OCR, set code, card name)
 - [x] Condition estimate: centering, edge whitening
 - [x] Web app: scan, search, card page with prices, price history chart and condition
-- [x] Recognition by illustration (fingerprints per edition): Base Set
-- [ ] Fingerprints of the other editions (each era's artwork box to measure);
-      choosing the edition by hand in the app
+- [x] Recognition by illustration (fingerprints per edition): Wizards era
+      and Triumphant
+- [ ] Fingerprints of the other editions (from Ruby & Sapphire on, ~20,000
+      cards; each era's artwork box to measure); choosing the edition by hand
+      in the app
 - [ ] Settle the remaining ties by comparing the set symbol
 - [ ] Measure recognition and condition on more real phone photos (so far 44
       photos of Base Set cards; whitening has only been tested on drawn card
