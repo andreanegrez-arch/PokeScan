@@ -670,7 +670,9 @@ def _build(args: argparse.Namespace) -> int:
         return 1
     absent = [s for s in args.sets if s not in found]
     if absent:
-        log.error("Not in the catalog: %s (run jobs.import_catalog first)", ", ".join(absent))
+        log.warning("No cards in the catalog for %s (run jobs.import_catalog first)",
+                    ", ".join(absent))
+    if not found:
         return 1
 
     args.out.mkdir(parents=True, exist_ok=True)
