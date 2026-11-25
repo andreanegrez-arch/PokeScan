@@ -73,6 +73,9 @@ SOURCE_SET_IDS = {
     "swsh10.5": "pgo", "fut2020": "fut20", "sv10.5b": "zsv10pt5", "sv10.5w": "rsv10pt5",
     "30th": "me55", "30th-c": "me55c",
 }
+# Where pokemontcg.io's lists may send for a picture: its own server, or that
+# of Scrydex, which runs it (the newest editions). Anywhere else: ask first.
+PICTURE_HOSTS = {"images.pokemontcg.io", "images.scrydex.com"}
 LANGS = ("en", "it")
 WORKERS = 4
 RETRIES = 4
@@ -261,6 +264,11 @@ def attach_pictures(cards: list[Card], listed: list[dict]) -> None:
     by_number = {_plain_number(e["number"]): e["images"]["large"] for e in listed}
     for card in cards:
         card.url = by_number.get(_plain_number(card.number))
+
+
+def unexpected_hosts(cards: list[Card]) -> set[str]:
+    """Servers the source's list sends to, other than PICTURE_HOSTS."""
+    return {c.url.split("/")[2] for c in cards if c.url} - PICTURE_HOSTS
 
 
 def _order_key(number: str) -> tuple:
@@ -709,6 +717,9 @@ def _build(args: argparse.Namespace) -> int:
             source = source_set(set_id)
             listed = _listing(client, f"cards/en/{source}.json") if source in available else None
             attach_pictures(cards, listed or [])
+            if hosts := unexpected_hosts(cards):
+                raise Stop(f"{set_id}: pokemontcg.io's list sends to {', '.join(sorted(hosts))},"
+                           " not a server agreed on")
             reports[set_id] = build(cards, args.out, client, Path(folder), known,
                                     args.check, photos, vocabulary)
             if args.report:

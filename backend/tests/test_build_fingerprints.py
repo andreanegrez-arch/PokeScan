@@ -8,7 +8,7 @@ import pytest
 from app.recognition import artwork
 from jobs.build_fingerprints import (
     REPRINT_INLIERS, Card, _classic, _first_printing, attach_pictures, era_of, glare,
-    layout_for, printed_total, source_set, train_vocabulary,
+    layout_for, printed_total, source_set, train_vocabulary, unexpected_hosts,
 )
 from tests.test_artwork import LAYOUT, drawn_card
 
@@ -149,3 +149,14 @@ def test_the_vocabulary_has_its_size_and_is_made_of_descriptors():
     words = train_vocabulary(descriptors, 64, np.random.default_rng(1), sample=1000)
 
     assert words.shape == (64, 32) and words.dtype == np.uint8
+
+
+def test_pictures_from_a_server_not_agreed_on_are_noticed():
+    cards = [Card(f"x-{n}", "x", n, None, LAYOUT, url=url) for n, url in [
+        ("1", "https://images.pokemontcg.io/x/1_hires.png"),
+        ("2", "https://images.scrydex.com/pokemon/x-2/large"),
+        ("3", "https://elsewhere.example.test/x/3.png"),
+        ("4", None),
+    ]]
+
+    assert unexpected_hosts(cards) == {"elsewhere.example.test"}
