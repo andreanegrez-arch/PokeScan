@@ -87,20 +87,32 @@ the edition the code points to:
   `python -m jobs.build_fingerprints` downloads its English picture from
   pokemontcg.io into a temporary folder, fingerprints the artwork box and
   deletes the picture. A fingerprint is up to 500 ORB keypoints (OpenCV: no
-  model to download). Done for the whole Wizards era and Triumphant (16
-  editions, secret cards included): 1,816 cards, 1,523 illustrations,
-  28.9 MB in `backend/fingerprints/` (one SQLite file per edition), from
-  1.5 GB of pictures.
+  model to download). Done for every edition pokemontcg.io has pictures of,
+  from Base Set to Mega Evolution, promos, POP series, McDonald's sets and
+  trainer kits included: 174 editions, 20,658 cards, 19,438 illustrations,
+  408 MB in `backend/fingerprints/` (one SQLite file per edition), from
+  15 GB of pictures. The cards pokemontcg.io has no picture of (most trainer
+  kits, McDonald's 2014, 2015, 2017 and 2018, the newest Scarlet & Violet
+  and Mega Evolution promos: about 770) have none, and are still found by
+  their code.
 - **The artwork box only**, a little inside its frame, measured per era
-  (Wizards, e-Card, HeartGold & SoulSilver) and per kind of card (Pokémon,
-  Trainer, Energy; LEGEND halves): no printed text, so one fingerprint serves
+  (Wizards, e-Card, EX, Diamond & Pearl and Platinum, HeartGold &
+  SoulSilver, Black & White and XY, Evolutions' old frame, Sun & Moon on) and
+  per kind of card (Pokémon, Trainer, Energy; LEGEND halves). A full-art card
+  (ex, GX, V, illustration rares, full-art Trainers) has the illustration
+  everywhere, under its text: its box is its era's, the part of the picture
+  with the least text on it, between the name and the attacks. Reprints in
+  an old frame (Celebrations' and the 30th anniversary's Classic Collection)
+  take the box of the illustration of the same name they agree with most.
+  No printed text, so one fingerprint serves
   every language, linked to each printing (language, edition, number, name
   from that language's official list). Cards printed only in Japanese, Korean
   or Chinese, with their own editions and numbers, will have fingerprints of
   their own; names in a language a card was never printed in will be marked
   as not official. The files have room for both. TCGdex has Italian names
-  for Base Set and Jungle only: the other editions' Italian printings are
-  left out rather than translated.
+  for Base Set, Jungle and most editions from Black & White on (14,176 of
+  the 20,658 cards, none from EX to HeartGold & SoulSilver): the other
+  Italian printings are left out rather than translated.
 - **One fingerprint per illustration.** A reprint (Base Set 2, Legendary
   Collection) links its printing to the illustration of the card it reprints
   when the two pictures agree on 80 keypoints or more; the number and set
@@ -124,19 +136,62 @@ the edition the code points to:
   `/102` is Base Set or Triumphant, `/64` Jungle or Neo Revelation, `/132`
   Gym Heroes or Gym Challenge, `H32` Aquapolis's or Skyridge's holos; the
   illustration decides. Or from the user (`set_id` on `/scan`). Only when no
-  code is read are all editions searched (about 3 s more).
+  code is read are all editions searched: 0.8 s a search on average (1.4 s
+  for 95% of photos), thanks to the shortlist below. A scan that reads no
+  code takes 4.6 s (median, 26 simulated photos with the code covered)
+  against 1.1 s with one read, mostly OCR trying every way to read it.
 - **500 keypoints** per illustration: on the 44 photos, 400 left Raichu
   undecided twice, 500 to 800 recognized every card. Base Set's file: 1.7 MB
   at 400, 1.9 MB at 500, 2.3 MB at 600, 3.0 MB at 800.
+- **A shortlist first.** Comparing a photo keypoint by keypoint with each
+  of 19,438 illustrations would take minutes. So each keypoint is also
+  given a visual word: the nearest of 2,048 reference descriptors
+  (`backend/fingerprints/vocabulary.bin`, 64 kB, drawn from the Wizards
+  era's descriptors), and the quarter of the box it is in. An index of
+  those words scores every illustration at once (tf-idf, cosine), and only
+  the 100 best are compared in full. Chosen on 100 simulated photos against
+  the Wizards era (1,523 illustrations): the right illustration ranked first
+  for 95% of them and never below 7th, for 63 ms a search. 4,096 words in
+  ninths of the box ranked it first more often (99%) but once 913th;
+  4,096 words without the quarters, 93% and once 112th; 1,024, 73%.
+  Fingerprints are read from their file only when compared, the last 4,000
+  kept in memory. The backend starts in 1.5 s and reads the files' indexes
+  at the first scan (4.6 s for the 178 files); it then takes about 350 MB
+  (working set), 600-700 MB of private memory with the OCR models and
+  4,000 fingerprints loaded.
 
 `python -m jobs.build_fingerprints <editions> --check 12` also turns 12
 cards per edition into simulated phone photos (perspective, uneven light,
 blur, noise, glare, JPEG) and recognizes them against every edition's
-fingerprints. On the 16 editions (192 photos): 189 right with the set size
-known, 188 searching every edition, none wrong. Left undecided: Starmie and
-Impostor Professor Oak (Base Set), Machoke and Nidoran ♂ (Legendary
-Collection; Machoke through Base Set's picture of the same illustration).
-Simulated photos
+fingerprints. On the Wizards era and Triumphant (16 editions, 192 photos):
+189 right with the set size known, 188 searching every edition, none wrong.
+On the other 158 editions (1,882 photos, against all 19,438 illustrations):
+
+| Era | Photos | Set size known: right / wrong / undecided | Every edition searched: right / wrong / undecided |
+|---|---:|---:|---:|
+| Wizards-era promos | 33 | 100% / 0 / 0 | 88% / 0 / 4 |
+| EX | 320 | 99.0% / 0 / 3 | 87% / 1 / 41 |
+| Diamond & Pearl, Platinum | 204 | 98.5% / 0 / 3 | 96% / 0 / 8 |
+| HeartGold & SoulSilver | 60 | 100% / 0 / 0 | 100% / 0 / 0 |
+| Black & White | 180 | 98.3% / 0 / 3 | 94% / 0 / 10 |
+| XY | 204 | 96.6% / 0 / 7 | 91% / 3 / 15 |
+| Sun & Moon | 228 | 97.8% / 0 / 5 | 92% / 0 / 18 |
+| Sword & Shield | 329 | 96.0% / 0 / 13 | 91% / 1 / 27 |
+| Scarlet & Violet | 216 | 91.2% / 0 / 19 | 82% / 1 / 38 |
+| Mega Evolution | 108 | 91.7% / 0 / 9 | 87% / 0 / 14 |
+| **All** | **1,882** | **96.7% / 0 / 62** | **90.4% / 6 / 175** |
+
+With the set size known, no photo was taken for a wrong card. Searching
+every edition, most undecided photos are of illustrations printed again in
+another era's frame (Potion, Energy Search, basic Energies, Evolutions'
+reprints of Base Set), which agree with both printings: no edition is picked
+rather than a wrong one. Of the 6 wrong, 4 are that same illustration in
+another edition (Evolutions' Kakuna, Poliwag and Rattata taken for Base
+Set's, EX Potion for e-Card's); Flaaffy's promo was taken for Galarian
+Zapdos', both stamped with the same big Evolving Skies logo over the
+illustration; and one Ninetales for another. Full-art, illustration and
+secret rares (317 photos): 93.7% right with the set size known, against
+97.3% for the other cards, none wrong. Simulated photos
 are kinder than real ones (no sleeves, no fingers, flat cards), and only Base
 Set has been tested on real photos so far.
 
@@ -320,9 +375,15 @@ pip install -r requirements-dev.txt
 cp .env.example .env            # then set DATABASE_PASSWORD in .env
 python -m app.init_db           # creates the database and the tables
 python -m jobs.import_catalog   # card catalog from TCGdex (first run: ~15 min)
-# optional, the fingerprints are in the repository; to make them again
-# (Wizards era and Triumphant, ~1.5 GB downloaded, then deleted; ~1.5 h):
-# python -m jobs.build_fingerprints base1 base2 base3 base4 base5 gym1 gym2 neo1 neo2 neo3 neo4 lc ecard1 ecard2 ecard3 hgss4
+# optional, the fingerprints are in the repository (174 editions, 408 MB).
+# To make them again, name the editions (TCGdex ids) in release order, so a
+# reprint finds the illustration it reprints: ~15 GB of pictures for all of
+# them, each deleted once fingerprinted, ~4.5 h. --skip-built leaves the
+# editions already made, so a run stopped halfway picks up where it was:
+# python -m jobs.build_fingerprints base1 base2 base3 ... me06 --skip-built
+# python -m jobs.build_fingerprints --vocabulary      # visual words, from the files made
+# python -m jobs.build_fingerprints --reindex         # give every file those words
+# python -m jobs.build_fingerprints --check-photos DIR  # recognize test photos kept by --photos DIR
 uvicorn app.main:app --reload
 ```
 
@@ -493,7 +554,7 @@ prices are therefore uncertain. If PostgreSQL is down, the endpoints answer
 |--------|----------|---------|
 | [Cardmarket price guide](https://news.cardmarket.com/en/Magic/were-making-the-price-guide-and-product-catalogue-available-for-download) | Daily prices (EUR) of every Pokémon product | Once a night, around 02:50 Italian time |
 | [TCGdex](https://tcgdex.dev) | Catalog: cards, sets, set codes and symbols, images (Italian included), Cardmarket product ids | Cards when sets are released; its own prices around midnight |
-| [pokemontcg.io](https://pokemontcg.io) | English pictures of the cards, Wizards era included, to fingerprint their illustrations (pictures deleted once done) | When an edition's fingerprints are made |
+| [pokemontcg.io](https://pokemontcg.io) | English pictures of the cards, Wizards era to Mega Evolution, to fingerprint their illustrations (pictures deleted once done). For the newest Mega Evolution editions (me02.5 to me06, the 30th anniversary set and its Classic Collection) its lists give pictures at images.scrydex.com | When an edition's fingerprints are made |
 
 The daily job stores Cardmarket's price guide; the catalog links each card to
 its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
@@ -507,10 +568,10 @@ its Cardmarket product id, so prices and cards join with a single SQL `JOIN`.
 - [x] Card identification from the printed code (OCR, set code, card name)
 - [x] Condition estimate: centering, edge whitening
 - [x] Web app: scan, search, card page with prices, price history chart and condition
-- [x] Recognition by illustration (fingerprints per edition): Wizards era
-      and Triumphant
-- [ ] Fingerprints of the other editions (from Ruby & Sapphire on, ~20,000
-      cards; each era's artwork box to measure); choosing the edition by hand
+- [x] Recognition by illustration (fingerprints per edition): every edition
+      pokemontcg.io has pictures of, Wizards era to Mega Evolution
+- [ ] Fingerprints of the cards pokemontcg.io has no picture of (trainer
+      kits, some promos and McDonald's sets); choosing the edition by hand
       in the app
 - [ ] Settle the remaining ties by comparing the set symbol
 - [ ] Measure recognition and condition on more real phone photos (so far 44
