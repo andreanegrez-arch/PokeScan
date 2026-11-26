@@ -311,6 +311,57 @@ def test_an_illustration_of_no_edition_changes_nothing(catalog, old_sets):
     assert result.status == "ambiguous"
 
 
+def test_another_number_read_as_a_code_no_card_has_leaves_the_illustration_to_find_the_card(
+        catalog, old_sets):
+    # The code is out of sight; '70/150' (no edition has 150 cards) was read instead.
+    result = identify(catalog, photo(drawn_card(7, "70/150")), "it")
+
+    assert result.status == "matched"
+    assert result.match.card_id == "old1-14"
+    assert result.code is None
+
+
+def test_another_number_read_as_the_code_of_cards_drawn_otherwise_is_set_aside(
+        catalog, old_sets, fingerprints):
+    # 025/198 is Pikachu's code in sv01 (and Snom's in swsh6), but the drawing
+    # isn't sv01's 025: the code read was another number on Raichu's card.
+    edition(fingerprints, "sv01", [(13, "025")], total="198")
+    result = identify(catalog, photo(drawn_card(7, "025/198")), "it")
+
+    assert result.status == "matched"
+    assert result.match.card_id == "old1-14"
+    assert result.code is None
+
+
+def test_a_code_the_illustration_confirms_wins_over_the_same_illustration_elsewhere(
+        catalog, fingerprints):
+    # One drawing printed as old1's 14 and as sv01's 025: 025/198 was read.
+    edition(fingerprints, "old1", [(7, "14")])
+    save(fingerprints, "sv01", [], [("old1/14", printing("sv01-025", "025", "198"))], "198")
+    result = identify(catalog, photo(drawn_card(7, "025/198")), "it")
+
+    assert result.status == "matched"
+    assert result.match.card_id == "sv01-025"
+    assert result.code.number == "025"
+
+
+def test_a_code_the_name_confirms_stands_whatever_the_illustration(
+        catalog, old_sets, fingerprints):
+    edition(fingerprints, "sv01", [(13, "025")], total="198")
+    result = identify(catalog, photo(drawn_card(7, "025/198", "Snom")), "it")
+
+    assert result.status == "matched"
+    assert result.match.card_id == "swsh6-025"
+
+
+def test_a_code_whose_cards_have_no_fingerprint_stands(catalog, old_sets):
+    # Furret's illustration can't be compared: the code read is all there is.
+    result = identify(catalog, photo(drawn_card(7, "136/189")), "it")
+
+    assert result.status == "matched"
+    assert result.match.card_id == "swsh3-136"
+
+
 def test_without_any_code_the_illustration_alone_finds_the_card(catalog, old_sets):
     result = identify(catalog, photo(drawn_card(7)), "it")
 

@@ -15,7 +15,10 @@
    card's illustration is compared with its illustrations: a clear match
    confirms the number read, or corrects it (Raichu's 14/102 read as 4/102),
    unless the code was already confirmed by the set code or the name. Nothing
-   read at all: the illustration is looked for in every edition, last.
+   read at all: the illustration is looked for in every edition, last. So it
+   is too when the code was another number on the card read as one: no card
+   has it, or the cards that have it have illustrations of their own, and
+   none is the photo's. Found nowhere: as before, the code read stands.
 6. Still more than one: 'ambiguous', and the user picks.
 7. A card was found, or a code was read that no card in the catalog has (a
    Japanese or Chinese card, say): estimate its condition from the same photo
@@ -81,6 +84,11 @@ class _Illustration:
                         artwork.MIN_INLIERS_ANYWHERE if strict else artwork.MIN_INLIERS)
             self.seen[key] = (view, found)  # the view is kept: its id stays its own
         return self.seen[key][1]
+
+    def fingerprinted(self, cards: list[CardSummary]) -> bool:
+        """Whether any of these cards' illustrations has a fingerprint to compare."""
+        ids = {card.card_id for card in cards}
+        return any(p.card_id in ids for art in self.artworks for p in art.printings)
 
 
 def _illustrated(
@@ -234,6 +242,17 @@ def identify(
             return _result("matched", code, match=card, condition=estimate)
         return _result("ambiguous", code, candidates=cards, condition=estimate)
 
+    def anywhere(view, turned) -> ScanResult | None:
+        """The card found by its illustration alone, in every edition (or the
+        one chosen): the way up given first, then the other."""
+        for way_up, card_view in ((turned, view), (not turned, None)):
+            seen = illustration.match(card_view, way_up, None)
+            if seen is not None:
+                _, cards = _illustrated(conn, seen, None, lang)
+                if cards:
+                    return found(cards, None, way_up)
+        return None
+
     # A code read, but no card has it, and which way up the card was then.
     first: tuple[CollectorCode, bool] | None = None
     for view, code_region, name_region, turned in _views(image):
@@ -246,26 +265,28 @@ def identify(
             if not candidates:
                 continue
             code, candidates, confirmed = _narrow(conn, read, candidates, reading, name_lines)
+            doubted = False  # their illustrations compared, and none is the photo's
             if read.total is not None and not (confirmed and len(candidates) == 1):
                 seen = illustration.match(card_view, turned, read.total)
                 if seen is not None:
                     corrected, cards = _illustrated(conn, seen, read, lang)
                     if cards:
                         return found(cards, corrected, turned)
+                doubted = not confirmed and illustration.fingerprinted(candidates)
             if read in reading.guesses and not confirmed:
                 continue
+            if doubted:
+                # Another number on the card, read as its code? (An attack's
+                # damage, say.) A card the illustration alone finds wins.
+                result = anywhere(card_view, turned)
+                if result is not None:
+                    return result
             return found(candidates, code, turned)
         if reading.codes and first is None:
             first = reading.codes[0], turned  # try the other views
     if first is None:
-        # No code at all: the illustration alone, in every edition (or the one chosen).
-        for turned in (False, True):
-            seen = illustration.match(None, turned, None)
-            if seen is not None:
-                _, cards = _illustrated(conn, seen, None, lang)
-                if cards:
-                    return found(cards, None, turned)
-        return _result("unreadable")
+        # No code at all: the illustration alone.
+        return anywhere(None, False) or _result("unreadable")
     code, turned = first
     # A number no card has: misread, if the illustration is one of that edition's.
     seen = illustration.match(None, turned, code.total) if code.total is not None else None
@@ -273,6 +294,10 @@ def identify(
         corrected, cards = _illustrated(conn, seen, code, lang)
         if cards:
             return found(cards, corrected, turned)
+    # Or another number on the card, read as its code: the illustration alone.
+    result = anywhere(None, turned)
+    if result is not None:
+        return result
     # The card isn't in the catalog (a Chinese one, say), but the photo is
     # still good enough to read its code: measure its condition all the same.
     return _result("not_found", code, condition=condition.assess(image, turned, back, lang))

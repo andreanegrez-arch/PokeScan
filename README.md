@@ -40,7 +40,10 @@ it within the edition the code points to (see
    name already settled it: a clear match confirms the number, or corrects it
    (Raichu's 14/102 read as `4/102` was offered as Charizard), and picks the
    edition when two share the size (`/102`: Base Set or Triumphant). No code
-   read at all: the illustration is looked for in every edition, last.
+   read at all: the illustration is looked for in every edition, last. So it
+   is when the code read was another number on the card (the HP, an attack's
+   damage): no card has it, or its cards have fingerprints and none is the
+   photo's. Found nowhere: the code read stands, as before.
 6. Still undecided: show the candidates and let the user choose.
    Nothing recognized: ask for a better photo (or a manual search by code).
 7. A card was found: estimate its condition (see [Condition](#condition)).
@@ -136,10 +139,15 @@ the edition the code points to:
   `/102` is Base Set or Triumphant, `/64` Jungle or Neo Revelation, `/132`
   Gym Heroes or Gym Challenge, `H32` Aquapolis's or Skyridge's holos; the
   illustration decides. Or from the user (`set_id` on `/scan`). Only when no
-  code is read are all editions searched: 0.8 s a search on average (1.4 s
-  for 95% of photos), thanks to the shortlist below. A scan that reads no
-  code takes 4.6 s (median, 26 simulated photos with the code covered)
-  against 1.1 s with one read, mostly OCR trying every way to read it.
+  code is read, or the code read is another number on the card, are all
+  editions searched: 0.8 s a search on average (1.4 s for 95% of photos),
+  thanks to the shortlist below. On 1,852 simulated photos with the code
+  covered, a scan finds 88% of the cards (52% before the second case was
+  searched too, with 2 more taken for another card: a Ninetales, a basic
+  energy) in 4.5 s (median), against 1.0 s with the code read, mostly OCR
+  trying every way to read it. Still wrong: 75 of them, mostly a three-digit
+  number read as a code without its slash (`110`, often the HP) whose cards
+  the illustration contradicts but found nowhere else.
 - **500 keypoints** per illustration: on the 44 photos, 400 left Raichu
   undecided twice, 500 to 800 recognized every card. Base Set's file: 1.7 MB
   at 400, 1.9 MB at 500, 2.3 MB at 600, 3.0 MB at 800.
