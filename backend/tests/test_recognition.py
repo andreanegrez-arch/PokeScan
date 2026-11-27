@@ -137,6 +137,39 @@ def test_uppercase_words_are_kept_as_set_code_hints():
     assert read_code(["G", "SVIEN", "025/198", "GAME FREAK"]).set_hints == ["SVIEN"]
 
 
+SETS_OF_001 = [summary("me01-001", "MEG"), summary("ex13-1", "HP"), summary("ecard1-1", "EX"),
+               summary("ex7-1", "TR"), summary("sv01-001", "SVI"), summary("hgss2-1", "UL"),
+               summary("si1-1", "SI"), summary("pl1-1", "PL"), summary("sv08.5-001", "PRE"),
+               summary("col1-1", "COL")]
+
+
+@pytest.mark.parametrize("line", ["MEG 001/132", "MEGEN 001/132", "MEG EN 001/132"])
+def test_the_set_code_printed_with_the_number_still_picks_its_set(line):
+    hints = read_code([line]).set_hints
+
+    assert [c.card_id for c in by_set_code(SETS_OF_001, hints)] == ["me01-001"]
+
+
+def test_svien_still_picks_svi():
+    hints = read_code(["SVIEN 001/198"]).set_hints
+
+    assert [c.card_id for c in by_set_code(SETS_OF_001, hints)] == ["sv01-001"]
+
+
+@pytest.mark.parametrize("lines", [
+    ["MEGA Lucario ex", "001/132"],  # 'MEGA' begins with MEG
+    ["BASIC Reshiram-GX HP 180", "110"],  # 'HP' is Holon Phantoms' code
+    ["Latios EX", "HP170"],
+    ["TRAINER", "Professor's Research"],  # 'TRAINER' begins with TR, Team Rocket Returns
+    ["ULTRA BEAST", "SINGLE STRIKE", "TEAM PLASMA", "PRERELEASE"],
+    ["ULTRACREATURA", "COLPO SINGOLO", "MEGAEVOLUZIONE", "PS 110"],
+])
+def test_words_printed_on_cards_confirm_no_set(lines):
+    hints = read_code(lines).set_hints
+
+    assert by_set_code(SETS_OF_001, hints) is SETS_OF_001
+
+
 def test_names_are_found_despite_small_ocr_mistakes():
     assert name_in_text("Toedscool", "BASIC Toedscool HP60")
     assert name_in_text("Colonia di Annullamento", "Colonia di Annulamento")

@@ -71,8 +71,21 @@ PROMO = re.compile(
 
 LOOKALIKE_DIGITS = str.maketrans("OIL", "011")
 
-# Uppercase words printed near the code that are never a set code.
-NOT_SET_CODES = {"GAME", "FREAK", "GAMEFREAK"}
+# Uppercase words printed on cards that are never a set code. Most begin with
+# one ('HP' is Holon Phantoms', 'MEGA' begins with Mega Evolution's MEG), and
+# a set code is any word it begins ('SVIEN': SVI): read off the whole card,
+# 'HP' made a 110 read there (its HP) Holon Phantoms' 1/110, "confirmed". Only
+# the whole word is left out: 'MEG' and 'MEGEN' still point to MEG.
+NOT_SET_CODES = {
+    "GAME", "FREAK", "GAMEFREAK", "CREATURES",
+    # English
+    "HP", "EX", "TRAINER", "MEGA", "EVOLVES", "EVOLUTION", "ULTRA", "SINGLE", "PLASMA",
+    "PRERELEASE", "FLIP", "ROCKET", "AQUA", "MAGMA", "PARALYZED", "PLAYER", "EXPANSION",
+    "JUMBO",
+    # Italian
+    "MEGAEVOLUZIONE", "EVOLUZIONE", "EVOLVE", "ULTRACREATURA", "COLPO", "SINGOLO",
+    "PLURIMO", "PREMIO", "LANCIA", "MAZZO", "MANO", "SI",
+}
 
 # Digits read without their slash, as the small print of old cards often is:
 # '1102' for 1/102 or 11/102, '702' for 7/102, 'B02' for 8/102. Not a year

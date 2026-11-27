@@ -35,6 +35,9 @@ it within the edition the code points to (see
    top. A corrected code is kept only if the set code or the name agrees with
    it. The first real phone photo showed why: a Chinese card's code, misread
    as `161/5`, was "corrected" to 1/5, and two unrelated cards were offered.
+   A set code is any uppercase word it begins (`SVIEN`: SVI), except words
+   printed on cards that begin with one: `HP` is Holon Phantoms' code, and
+   read off a whole card it made the HP (`110`, 1/110) its Armaldo δ.
 5. Where editions of that size have fingerprints of their illustrations, the
    card's illustration is compared with them all, unless the set code or the
    name already settled it: a clear match confirms the number, or corrects it
@@ -142,12 +145,11 @@ the edition the code points to:
   code is read, or the code read is another number on the card, are all
   editions searched: 0.8 s a search on average (1.4 s for 95% of photos),
   thanks to the shortlist below. On 1,852 simulated photos with the code
-  covered, a scan finds 88% of the cards (52% before the second case was
-  searched too, with 2 more taken for another card: a Ninetales, a basic
-  energy) in 4.5 s (median), against 1.0 s with the code read, mostly OCR
-  trying every way to read it. Still wrong: 75 of them, mostly a three-digit
-  number read as a code without its slash (`110`, often the HP) whose cards
-  the illustration contradicts but found nowhere else.
+  covered, a scan finds 91% of the cards, 16 taken for another (52% before
+  the second case was searched too and `HP` stopped being a set code, with
+  74 taken for another), against 97% with the code read (32 taken for
+  another). It takes 4.3 s (median, 42 of them) against 1.0 s with the code
+  read, mostly OCR trying every way to read it.
 - **500 keypoints** per illustration: on the 44 photos, 400 left Raichu
   undecided twice, 500 to 800 recognized every card. Base Set's file: 1.7 MB
   at 400, 1.9 MB at 500, 2.3 MB at 600, 3.0 MB at 800.
